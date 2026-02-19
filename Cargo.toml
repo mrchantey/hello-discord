@@ -3,6 +3,10 @@ name = "hello-discord"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "hello_discord"
+path = "src/lib.rs"
+
 [dependencies]
 tokio = { version = "1.35", features = ["full"] }
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
