@@ -14,10 +14,15 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use async_channel::{bounded, Receiver, Sender};
+use async_lock::Mutex;
+use beet::core::{async_ext, time_ext};
 use beet::net::prelude::sockets::{CloseFrame, Message, Socket, SocketRead, SocketWrite};
 use beet::net::prelude::StreamExt;
+use beet::prelude::BevyError;
+
+use futures_lite::future::race;
 use serde_json::json;
-use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info, warn};
 
 use crate::events::GatewayEvent;
@@ -137,12 +142,9 @@ struct SessionState {
 pub struct GatewayHandle {
     /// Send arbitrary JSON payloads on the gateway (rate-limited).
     #[allow(dead_code)]
-    pub sender: mpsc::Sender<serde_json::Value>,
+    pub sender: Sender<serde_json::Value>,
     /// Receive typed events.
-    pub events: mpsc::Receiver<GatewayEvent>,
-    /// Handle to the background driver task so callers can await / abort it.
-    #[allow(dead_code)]
-    pub driver_handle: tokio::task::JoinHandle<()>,
+    pub events: Receiver<GatewayEvent>,
 }
 
 /// Connect to the Discord gateway, returning a [`GatewayHandle`].
@@ -153,15 +155,14 @@ pub struct GatewayHandle {
 ///   - reconnecting + resuming on disconnects
 ///   - rate-limiting outbound sends
 pub async fn connect(config: GatewayConfig) -> Result<GatewayHandle, String> {
-    let (event_tx, event_rx) = mpsc::channel::<GatewayEvent>(256);
-    let (send_tx, send_rx) = mpsc::channel::<serde_json::Value>(64);
+    let (event_tx, event_rx) = bounded::<GatewayEvent>(256);
+    let (send_tx, send_rx) = bounded::<serde_json::Value>(64);
 
-    let driver_handle = tokio::spawn(gateway_driver(config, event_tx, send_rx));
+    async_ext::spawn(gateway_driver(config, event_tx, send_rx)).detach();
 
     Ok(GatewayHandle {
         sender: send_tx,
         events: event_rx,
-        driver_handle,
     })
 }
 
@@ -171,8 +172,8 @@ pub async fn connect(config: GatewayConfig) -> Result<GatewayHandle, String> {
 
 async fn gateway_driver(
     config: GatewayConfig,
-    event_tx: mpsc::Sender<GatewayEvent>,
-    mut send_rx: mpsc::Receiver<serde_json::Value>,
+    event_tx: Sender<GatewayEvent>,
+    send_rx: Receiver<serde_json::Value>,
 ) {
     let session = Arc::new(Mutex::new(SessionState::default()));
     let mut reconnect_attempts: u32 = 0;
@@ -228,7 +229,7 @@ async fn gateway_driver(
                     attempt = reconnect_attempts,
                     "backing off before reconnect"
                 );
-                tokio::time::sleep(backoff).await;
+                time_ext::sleep(backoff).await;
                 continue;
             }
         };
@@ -251,7 +252,7 @@ async fn gateway_driver(
                 error!(error = %e, "failed to read HELLO from gateway");
                 reconnect_attempts += 1;
                 let backoff = backoff_delay(reconnect_attempts);
-                tokio::time::sleep(backoff).await;
+                time_ext::sleep(backoff).await;
                 continue;
             }
         };
@@ -281,7 +282,7 @@ async fn gateway_driver(
                 error!(error = %e, "failed to send RESUME");
                 reconnect_attempts += 1;
                 let backoff = backoff_delay(reconnect_attempts);
-                tokio::time::sleep(backoff).await;
+                time_ext::sleep(backoff).await;
                 continue;
             }
             info!("sent RESUME");
@@ -307,7 +308,7 @@ async fn gateway_driver(
                 error!(error = %e, "failed to send IDENTIFY");
                 reconnect_attempts += 1;
                 let backoff = backoff_delay(reconnect_attempts);
-                tokio::time::sleep(backoff).await;
+                time_ext::sleep(backoff).await;
                 continue;
             }
             info!("sent IDENTIFY");
@@ -319,42 +320,57 @@ async fn gateway_driver(
         let hb_write = Arc::clone(&ws_write);
         let hb_session = Arc::clone(&session);
         let hb_rate_limiter = Arc::clone(&rate_limiter);
-        let (hb_cancel_tx, mut hb_cancel_rx) = mpsc::channel::<()>(1);
+        let (hb_cancel_tx, hb_cancel_rx) = bounded::<()>(1);
 
-        let heartbeat_handle = tokio::spawn(async move {
+        let heartbeat_handle = async_ext::spawn(async move {
             // Discord says we should send the first heartbeat after
             // `heartbeat_interval * jitter` where jitter ∈ [0, 1).
             let jitter = rand::random::<f64>();
             let first_delay = Duration::from_millis((heartbeat_interval as f64 * jitter) as u64);
-            tokio::select! {
-                _ = tokio::time::sleep(first_delay) => {}
-                _ = hb_cancel_rx.recv() => { return; }
+            let cancelled = race(
+                async {
+                    time_ext::sleep(first_delay).await;
+                    false
+                },
+                async {
+                    let _ = hb_cancel_rx.recv().await;
+                    true
+                },
+            )
+            .await;
+            if cancelled {
+                return;
             }
 
-            let mut interval = tokio::time::interval(Duration::from_millis(heartbeat_interval));
-            // The first tick fires immediately; we already waited above.
-            interval.tick().await;
-
+            let interval_dur = Duration::from_millis(heartbeat_interval);
             loop {
-                tokio::select! {
-                    _ = interval.tick() => {
-                        let seq = {
-                            let s = hb_session.lock().await;
-                            s.sequence
-                        };
-                        let heartbeat = json!({"op": 1, "d": seq});
-
-                        if let Err(e) = rate_limited_send(&hb_write, &hb_rate_limiter, &heartbeat).await {
-                            warn!(error = %e, "heartbeat send failed, stopping heartbeat task");
-                            return;
-                        }
-                        debug!("sent heartbeat (seq={:?})", seq);
-                    }
-                    _ = hb_cancel_rx.recv() => {
-                        debug!("heartbeat task cancelled");
-                        return;
-                    }
+                let cancelled = race(
+                    async {
+                        time_ext::sleep(interval_dur).await;
+                        false
+                    },
+                    async {
+                        let _ = hb_cancel_rx.recv().await;
+                        true
+                    },
+                )
+                .await;
+                if cancelled {
+                    debug!("heartbeat task cancelled");
+                    return;
                 }
+
+                let seq = {
+                    let s = hb_session.lock().await;
+                    s.sequence
+                };
+                let heartbeat = json!({"op": 1, "d": seq});
+
+                if let Err(e) = rate_limited_send(&hb_write, &hb_rate_limiter, &heartbeat).await {
+                    warn!(error = %e, "heartbeat send failed, stopping heartbeat task");
+                    return;
+                }
+                debug!("sent heartbeat (seq={:?})", seq);
             }
         });
 
@@ -368,7 +384,7 @@ async fn gateway_driver(
             &event_tx,
             &session,
             &config,
-            &mut send_rx,
+            &send_rx,
         )
         .await;
 
@@ -376,7 +392,7 @@ async fn gateway_driver(
         // 5.  Cleanup — cancel heartbeat, decide whether to reconnect
         // ------------------------------------------------------------------
         let _ = hb_cancel_tx.send(()).await;
-        heartbeat_handle.abort();
+        drop(heartbeat_handle);
 
         // Try to close the WS gracefully.
         {
@@ -417,7 +433,7 @@ async fn gateway_driver(
             attempt = reconnect_attempts,
             "reconnecting after backoff"
         );
-        tokio::time::sleep(backoff).await;
+        time_ext::sleep(backoff).await;
     }
 }
 
@@ -441,24 +457,39 @@ async fn read_loop(
     ws_read: &mut SocketRead,
     ws_write: &Arc<Mutex<SocketWrite>>,
     rate_limiter: &Arc<Mutex<SendRateLimiter>>,
-    event_tx: &mpsc::Sender<GatewayEvent>,
+    event_tx: &Sender<GatewayEvent>,
     session: &Arc<Mutex<SessionState>>,
     _config: &GatewayConfig,
-    send_rx: &mut mpsc::Receiver<serde_json::Value>,
+    send_rx: &Receiver<serde_json::Value>,
 ) -> DisconnectReason {
     loop {
-        tokio::select! {
-            biased;
+        enum Sel {
+            Send(serde_json::Value),
+            Ws(Option<Result<Message, BevyError>>),
+        }
 
+        // When send_rx is closed (sender dropped), fall through to the ws branch only.
+        let sel = race(
+            async {
+                match send_rx.recv().await {
+                    Ok(payload) => Sel::Send(payload),
+                    Err(_) => Sel::Ws(futures_lite::future::pending().await),
+                }
+            },
+            async { Sel::Ws(ws_read.next().await) },
+        )
+        .await;
+
+        match sel {
             // Outbound sends from the bot logic (e.g. update presence).
-            Some(payload) = send_rx.recv() => {
+            Sel::Send(payload) => {
                 if let Err(e) = rate_limited_send(ws_write, rate_limiter, &payload).await {
                     warn!(error = %e, "failed to send user payload on gateway");
                 }
             }
 
             // Inbound messages from Discord.
-            msg = ws_read.next() => {
+            Sel::Ws(msg) => {
                 let msg = match msg {
                     Some(Ok(m)) => m,
                     Some(Err(e)) => {
@@ -509,7 +540,9 @@ async fn read_loop(
                                     s.sequence
                                 };
                                 let heartbeat = json!({"op": 1, "d": seq});
-                                if let Err(e) = rate_limited_send(ws_write, rate_limiter, &heartbeat).await {
+                                if let Err(e) =
+                                    rate_limited_send(ws_write, rate_limiter, &heartbeat).await
+                                {
                                     warn!(error = %e, "failed to send requested heartbeat");
                                 }
                                 debug!("sent requested heartbeat");
@@ -529,10 +562,10 @@ async fn read_loop(
                             GatewayEvent::InvalidSession(resumable) => {
                                 warn!(resumable, "session invalidated (op 9)");
                                 if *resumable {
-                                    tokio::time::sleep(Duration::from_secs(2)).await;
+                                    time_ext::sleep(Duration::from_secs(2)).await;
                                     return DisconnectReason::ShouldResume;
                                 } else {
-                                    tokio::time::sleep(Duration::from_secs(3)).await;
+                                    time_ext::sleep(Duration::from_secs(3)).await;
                                     return DisconnectReason::ShouldReidentify;
                                 }
                             }
@@ -583,7 +616,10 @@ async fn read_loop(
                                     return DisconnectReason::ShouldReidentify;
                                 }
                                 c => {
-                                    warn!(close_code = c, "unrecognized close code, will attempt to resume");
+                                    warn!(
+                                        close_code = c,
+                                        "unrecognized close code, will attempt to resume"
+                                    );
                                     return DisconnectReason::ShouldResume;
                                 }
                             }
@@ -606,7 +642,7 @@ async fn read_loop(
 
 /// Read the HELLO payload from an already-split stream reference.
 async fn read_hello_from_stream(stream: &mut SocketRead) -> Result<u64, String> {
-    let msg = tokio::time::timeout(Duration::from_secs(30), stream.next())
+    let msg = async_ext::timeout(Duration::from_secs(30), stream.next())
         .await
         .map_err(|_| "timed out waiting for HELLO".to_string())?
         .ok_or_else(|| "stream ended before HELLO".to_string())?
@@ -652,7 +688,7 @@ async fn rate_limited_send(
                     delay_ms = d.as_millis() as u64,
                     "gateway send rate-limited, waiting"
                 );
-                tokio::time::sleep(d).await;
+                time_ext::sleep(d).await;
             }
             None => break,
         }

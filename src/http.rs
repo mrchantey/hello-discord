@@ -5,13 +5,14 @@
 //! The beet `Request` / `Response` types are an implementation detail —
 //! swapping HTTP backends only requires touching this module.
 
+use async_lock::Mutex;
+use beet::core::time_ext;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
-use beet::core::prelude::{Request, ResponseParts, StatusCode};
+use beet::core::prelude::{HttpMethod, Request, ResponseParts, StatusCode};
 use beet::net::prelude::RequestClientExt;
 
 use crate::types::*;
@@ -142,20 +143,6 @@ fn parse_rate_limit_headers(parts: &ResponseParts) -> RateLimitInfo {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP method enum
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-pub enum Method {
-    Get,
-    Post,
-    Put,
-    Patch,
-    Delete,
-}
-
-// ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
 
@@ -217,14 +204,8 @@ impl DiscordHttpClient {
     // Internal helper: build a base Request with auth + user-agent
     // ------------------------------------------------------------------
 
-    fn build_request(&self, method: Method, url: &str) -> Request {
-        let mut req = match method {
-            Method::Get => Request::get(url),
-            Method::Post => Request::post(url),
-            Method::Put => Request::put(url),
-            Method::Patch => Request::patch(url),
-            Method::Delete => Request::delete(url),
-        };
+    fn build_request(&self, method: HttpMethod, url: &str) -> Request {
+        let mut req = Request::new(method, url);
         req.insert_header("authorization", format!("Bot {}", self.token));
         req.insert_header("user-agent", USER_AGENT);
         req
@@ -242,7 +223,7 @@ impl DiscordHttpClient {
     /// Returns the raw response body as bytes on success.
     pub async fn request(
         &self,
-        method: Method,
+        method: HttpMethod,
         path: &str,
         route_key: &str,
         body: Option<&serde_json::Value>,
@@ -260,7 +241,7 @@ impl DiscordHttpClient {
                         delay_ms = delay.as_millis() as u64,
                         "rate-limit pre-emptive backoff"
                     );
-                    tokio::time::sleep(delay).await;
+                    time_ext::sleep(delay).await;
                 }
             }
 
@@ -305,7 +286,7 @@ impl DiscordHttpClient {
                 }
 
                 if attempt < max_retries {
-                    tokio::time::sleep(delay).await;
+                    time_ext::sleep(delay).await;
                     continue;
                 }
             }
@@ -338,7 +319,7 @@ impl DiscordHttpClient {
     /// Like [`request`] but deserialises the response body as JSON.
     pub async fn request_json<T: serde::de::DeserializeOwned>(
         &self,
-        method: Method,
+        method: HttpMethod,
         path: &str,
         route_key: &str,
         body: Option<&serde_json::Value>,
@@ -373,7 +354,7 @@ impl DiscordHttpClient {
         let path = format!("channels/{}/messages", channel_id);
         let route_key = format!("POST /channels/{}/messages", channel_id);
         let body = serde_json::to_value(msg).map_err(|e| HttpError::Serde(e.to_string()))?;
-        self.request_json(Method::Post, &path, &route_key, Some(&body))
+        self.request_json(HttpMethod::Post, &path, &route_key, Some(&body))
             .await
     }
 
@@ -400,7 +381,7 @@ impl DiscordHttpClient {
                     delay_ms = delay.as_millis() as u64,
                     "rate-limit pre-emptive backoff"
                 );
-                tokio::time::sleep(delay).await;
+                time_ext::sleep(delay).await;
             }
         }
 
@@ -409,7 +390,7 @@ impl DiscordHttpClient {
         let body_bytes = build_multipart(&boundary, content, filename, &file_content);
         let content_type = format!("multipart/form-data; boundary={}", boundary);
 
-        let mut req = self.build_request(Method::Post, &url);
+        let mut req = self.build_request(HttpMethod::Post, &url);
         req.insert_header("content-type", content_type);
         let req = req.with_body(body_bytes);
 
@@ -456,7 +437,7 @@ impl DiscordHttpClient {
     ) -> Result<Vec<Message>, HttpError> {
         let path = format!("channels/{}/messages?{}", channel_id, query);
         let route_key = format!("GET /channels/{}/messages", channel_id);
-        self.request_json(Method::Get, &path, &route_key, None)
+        self.request_json(HttpMethod::Get, &path, &route_key, None)
             .await
     }
 
@@ -468,7 +449,7 @@ impl DiscordHttpClient {
     pub async fn get_guild(&self, guild_id: &str) -> Result<Guild, HttpError> {
         let path = format!("guilds/{}?with_counts=true", guild_id);
         let route_key = format!("GET /guilds/{}", guild_id);
-        self.request_json(Method::Get, &path, &route_key, None)
+        self.request_json(HttpMethod::Get, &path, &route_key, None)
             .await
     }
 
@@ -490,7 +471,7 @@ impl DiscordHttpClient {
         let route_key = "POST /interactions/callback".to_string();
         let body = serde_json::to_value(response).map_err(|e| HttpError::Serde(e.to_string()))?;
         // Discord returns 204 No Content on success — don't parse JSON.
-        self.request(Method::Post, &path, &route_key, Some(&body))
+        self.request(HttpMethod::Post, &path, &route_key, Some(&body))
             .await?;
         Ok(())
     }
@@ -508,7 +489,7 @@ impl DiscordHttpClient {
             application_id, interaction_token
         );
         let route_key = "PATCH /webhooks/interaction/messages/@original".to_string();
-        self.request_json(Method::Patch, &path, &route_key, Some(body))
+        self.request_json(HttpMethod::Patch, &path, &route_key, Some(body))
             .await
     }
 
@@ -533,7 +514,7 @@ impl DiscordHttpClient {
             application_id, guild_id
         );
         let body = serde_json::to_value(commands).map_err(|e| HttpError::Serde(e.to_string()))?;
-        self.request_json(Method::Put, &path, &route_key, Some(&body))
+        self.request_json(HttpMethod::Put, &path, &route_key, Some(&body))
             .await
     }
 
@@ -546,7 +527,7 @@ impl DiscordHttpClient {
         let path = format!("applications/{}/commands", application_id);
         let route_key = format!("PUT /applications/{}/commands", application_id);
         let body = serde_json::to_value(commands).map_err(|e| HttpError::Serde(e.to_string()))?;
-        self.request_json(Method::Put, &path, &route_key, Some(&body))
+        self.request_json(HttpMethod::Put, &path, &route_key, Some(&body))
             .await
     }
 
@@ -559,7 +540,7 @@ impl DiscordHttpClient {
     pub async fn get_channel(&self, channel_id: &str) -> Result<Channel, HttpError> {
         let path = format!("channels/{}", channel_id);
         let route_key = format!("GET /channels/{}", channel_id);
-        self.request_json(Method::Get, &path, &route_key, None)
+        self.request_json(HttpMethod::Get, &path, &route_key, None)
             .await
     }
 

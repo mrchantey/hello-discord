@@ -158,7 +158,7 @@ pub async fn run_async() {
         shard: None, // single-shard for now
     };
 
-    let mut gw = match gateway::connect(config).await {
+    let gw = match gateway::connect(config).await {
         Ok(handle) => handle,
         Err(e) => {
             error!(error = %e, "failed to start gateway");
@@ -176,7 +176,7 @@ pub async fn run_async() {
     let mut commands_registered_for_app: Option<String> = None;
 
     // Main event loop — fully typed, no raw serde_json in sight.
-    while let Some(event) = gw.events.recv().await {
+    while let Ok(event) = gw.events.recv().await {
         match event {
             // ----- READY -----
             GatewayEvent::Ready(ready) => {
@@ -723,7 +723,7 @@ async fn handle_slash_command(
             // Send the file using webhook
             if let Some(ref ch_id) = interaction.channel_id {
                 let logo_path = "./logo-square.png";
-                match tokio::fs::read(logo_path).await {
+                match std::fs::read(logo_path) {
                     Ok(file_content) => {
                         match http
                             .send_message_with_file(
