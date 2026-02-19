@@ -11,7 +11,40 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Discord IDs are snowflakes transmitted as strings in JSON.
-pub type Snowflake = String;
+/// We use a custom type that can deserialize from either string or integer.
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
+#[serde(try_from = "SnowflakeInput")]
+pub struct Snowflake(String);
+
+impl Snowflake {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Snowflake {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum SnowflakeInput {
+    String(String),
+    Integer(u64),
+}
+
+impl TryFrom<SnowflakeInput> for Snowflake {
+    type Error = std::num::TryFromIntError;
+
+    fn try_from(value: SnowflakeInput) -> Result<Self, Self::Error> {
+        match value {
+            SnowflakeInput::String(s) => Ok(Snowflake(s)),
+            SnowflakeInput::Integer(i) => Ok(Snowflake(i.to_string())),
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Gateway payload (the envelope that wraps every WS message)
@@ -146,6 +179,7 @@ impl Message {
     /// Unix-millis timestamp derived from the message snowflake.
     pub fn snowflake_timestamp_ms(&self) -> Option<u64> {
         self.id
+            .as_str()
             .parse::<u64>()
             .ok()
             .map(|sf| (sf >> 22) + 1420070400000)
@@ -153,7 +187,7 @@ impl Message {
 
     /// Whether a given user id is mentioned in the message.
     pub fn mentions_user(&self, user_id: &str) -> bool {
-        self.mentions.iter().any(|u| u.id == user_id)
+        self.mentions.iter().any(|u| u.id.as_str() == user_id)
     }
 }
 
@@ -350,6 +384,7 @@ impl Guild {
     /// Unix-millis timestamp derived from the guild snowflake.
     pub fn created_at_ms(&self) -> Option<u64> {
         self.id
+            .as_str()
             .parse::<u64>()
             .ok()
             .map(|sf| (sf >> 22) + 1420070400000)
@@ -822,7 +857,7 @@ impl CreateMessage {
 
     pub fn reply_to(mut self, message_id: impl Into<String>) -> Self {
         self.message_reference = Some(MessageReference {
-            message_id: Some(message_id.into()),
+            message_id: Some(Snowflake(message_id.into())),
             channel_id: None,
             guild_id: None,
             fail_if_not_exists: false,

@@ -102,6 +102,20 @@ fn slash_commands() -> Vec<ApplicationCommand> {
             options: Vec::new(),
             kind: 1,
         },
+        ApplicationCommand {
+            id: None,
+            name: "send-logo".to_string(),
+            description: "Send the bot logo".to_string(),
+            options: Vec::new(),
+            kind: 1,
+        },
+        ApplicationCommand {
+            id: None,
+            name: "demo-select".to_string(),
+            description: "Demo the select menu component".to_string(),
+            options: Vec::new(),
+            kind: 1,
+        },
     ]
 }
 
@@ -164,39 +178,46 @@ async fn main() {
             // ----- READY -----
             GatewayEvent::Ready(ready) => {
                 info!(user = %ready.user.tag(), "bot is ready!");
-                bot_user_id = Some(ready.user.id.clone());
-                application_id = Some(ready.application.id.clone());
+                bot_user_id = Some(ready.user.id.as_str().to_string());
+                application_id = Some(ready.application.id.as_str().to_string());
                 info!(guilds = ready.guilds.len(), "connected to guilds");
 
-                // Register slash commands for dev guilds.
+                // Register slash commands based on SLASH_COMMAND_MODE config.
                 if !commands_registered {
                     if let Some(ref app_id) = application_id {
                         let cmds = slash_commands();
-                        for guild_id in DEV_GUILD_IDS {
-                            match http
-                                .bulk_overwrite_guild_commands(app_id, guild_id, &cmds)
-                                .await
-                            {
+                        let mode = std::env::var("SLASH_COMMAND_MODE")
+                            .unwrap_or_else(|_| "guild".to_string());
+
+                        if mode == "global" {
+                            // Register globally (takes up to an hour to propagate).
+                            match http.bulk_overwrite_global_commands(app_id, &cmds).await {
                                 Ok(registered) => {
-                                    info!(
-                                        guild_id,
-                                        count = registered.len(),
-                                        "registered guild slash commands"
-                                    );
+                                    info!(count = registered.len(), "registered global slash commands (may take up to 1 hour to propagate)");
                                 }
                                 Err(e) => {
-                                    warn!(guild_id, error = %e, "failed to register guild commands");
+                                    warn!(error = %e, "failed to register global commands");
                                 }
                             }
-                        }
-
-                        // Also register globally (takes up to an hour to propagate).
-                        match http.bulk_overwrite_global_commands(app_id, &cmds).await {
-                            Ok(registered) => {
-                                info!(count = registered.len(), "registered global slash commands");
-                            }
-                            Err(e) => {
-                                warn!(error = %e, "failed to register global commands");
+                        } else {
+                            // Default: Register for dev guilds only (fast propagation).
+                            info!(mode = %mode, "registering guild-scoped slash commands for fast development");
+                            for guild_id in DEV_GUILD_IDS {
+                                match http
+                                    .bulk_overwrite_guild_commands(app_id, guild_id, &cmds)
+                                    .await
+                                {
+                                    Ok(registered) => {
+                                        info!(
+                                            guild_id,
+                                            count = registered.len(),
+                                            "registered guild slash commands"
+                                        );
+                                    }
+                                    Err(e) => {
+                                        warn!(guild_id, error = %e, "failed to register guild commands");
+                                    }
+                                }
                             }
                         }
 
@@ -214,7 +235,7 @@ async fn main() {
                         .iter()
                         .find(|c| c.kind == ChannelType::GuildText)
                     {
-                        greet_channel_id = Some(ch.id.clone());
+                        greet_channel_id = Some(ch.id.as_str().to_string());
                         info!(
                             channel = ch.name.as_deref().unwrap_or("?"),
                             channel_id = %ch.id,
@@ -228,11 +249,11 @@ async fn main() {
             GatewayEvent::PresenceUpdate(presence) => {
                 let status = presence.status.as_deref().unwrap_or("offline");
                 if status == "online" {
-                    let user_id = &presence.user.id;
+                    let user_id = presence.user.id.as_str();
                     let is_self = bot_user_id.as_deref() == Some(user_id);
 
                     if !is_self && !user_id.is_empty() && !greeted_users.contains(user_id) {
-                        greeted_users.insert(user_id.clone());
+                        greeted_users.insert(user_id.to_string());
 
                         if let Some(ref ch_id) = greet_channel_id {
                             let greeting = format!(
@@ -255,10 +276,10 @@ async fn main() {
 
                 // Update greet channel if not set.
                 if greet_channel_id.is_none() {
-                    greet_channel_id = Some(msg.channel_id.clone());
+                    greet_channel_id = Some(msg.channel_id.as_str().to_string());
                 }
 
-                let channel_id = &msg.channel_id;
+                let channel_id = msg.channel_id.as_str();
                 let content = msg.content.trim();
 
                 // Check for @BotMention — treat as a command.
@@ -312,7 +333,8 @@ async fn main() {
                 let args = parts.get(1).copied().unwrap_or("");
 
                 // All command responses use message_reference to thread the reply.
-                let reply = |text: String| CreateMessage::new().content(text).reply_to(&msg.id);
+                let reply =
+                    |text: String| CreateMessage::new().content(text).reply_to(msg.id.as_str());
 
                 match command {
                     "!hello" => {
@@ -409,7 +431,7 @@ async fn main() {
 
                     "!serverinfo" => {
                         let text = if let Some(ref guild_id) = msg.guild_id {
-                            match http.get_guild(guild_id).await {
+                            match http.get_guild(guild_id.as_str()).await {
                                 Ok(guild) => format_guild_info(&guild),
                                 Err(e) => format!("❌ Error fetching server info: {}", e),
                             }
@@ -505,7 +527,7 @@ async fn handle_interaction(
                 kind: InteractionCallbackType::Pong,
                 data: None,
             };
-            http.create_interaction_response(&interaction.id, &interaction.token, &resp)
+            http.create_interaction_response(interaction.id.as_str(), &interaction.token, &resp)
                 .await?;
             Ok(())
         }
@@ -582,7 +604,7 @@ async fn handle_slash_command(
 
         "serverinfo" => {
             let text = if let Some(ref guild_id) = interaction.guild_id {
-                match http.get_guild(guild_id).await {
+                match http.get_guild(guild_id.as_str()).await {
                     Ok(guild) => format_guild_info(&guild),
                     Err(e) => format!("❌ Error: {}", e),
                 }
@@ -614,7 +636,7 @@ async fn handle_slash_command(
 
         "count" => {
             let text = if let Some(ref ch_id) = interaction.channel_id {
-                match http.count_messages(ch_id).await {
+                match http.count_messages(ch_id.as_str()).await {
                     Ok(count) => {
                         format!("📊 This channel has approximately **{}** messages.", count)
                     }
@@ -634,7 +656,7 @@ async fn handle_slash_command(
 
         "first" => {
             let text = if let Some(ref ch_id) = interaction.channel_id {
-                match http.get_first_message(ch_id).await {
+                match http.get_first_message(ch_id.as_str()).await {
                     Ok(first_msg) => {
                         let ts = if let Ok(dt) =
                             chrono::DateTime::parse_from_rfc3339(&first_msg.timestamp)
@@ -696,6 +718,109 @@ async fn handle_slash_command(
             }
         }
 
+        "send-logo" => {
+            // For file uploads, we need to use a follow-up webhook instead of immediate response
+            // First, acknowledge the interaction
+            let ack_response = InteractionResponse {
+                kind: InteractionCallbackType::DeferredChannelMessageWithSource,
+                data: None,
+            };
+            http.create_interaction_response(
+                interaction.id.as_str(),
+                &interaction.token,
+                &ack_response,
+            )
+            .await?;
+
+            // Send the file using webhook
+            if let Some(ref ch_id) = interaction.channel_id {
+                let logo_path = "./logo-square.png";
+                match tokio::fs::read(logo_path).await {
+                    Ok(file_content) => {
+                        match http
+                            .send_message_with_file(
+                                ch_id.as_str(),
+                                Some("Here's our logo! 🎨"),
+                                "logo-square.png",
+                                file_content,
+                            )
+                            .await
+                        {
+                            Ok(_) => {}
+                            Err(e) => {
+                                warn!(error = %e, "failed to send logo file");
+                                // Try to send error message
+                                let _ = http
+                                    .send_message(
+                                        ch_id.as_str(),
+                                        &format!("❌ Failed to send logo: {}", e),
+                                    )
+                                    .await;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "failed to read logo file");
+                        let _ = http
+                            .send_message(
+                                ch_id.as_str(),
+                                &format!("❌ Failed to read logo file: {}", e),
+                            )
+                            .await;
+                    }
+                }
+            }
+
+            // Return empty since we already handled the response
+            return Ok(());
+        }
+
+        "demo-select" => {
+            use crate::types::{string_select, SelectOption};
+
+            InteractionResponse {
+                kind: InteractionCallbackType::ChannelMessageWithSource,
+                data: Some(InteractionCallbackData {
+                    content: Some("Please select your favorite programming language:".to_string()),
+                    components: Some(vec![action_row(vec![string_select(
+                        "language_select",
+                        "Choose a language...",
+                        vec![
+                            SelectOption {
+                                label: "Rust".to_string(),
+                                value: "rust".to_string(),
+                                description: Some("Fast, safe, and concurrent".to_string()),
+                                emoji: None,
+                                default: false,
+                            },
+                            SelectOption {
+                                label: "Python".to_string(),
+                                value: "python".to_string(),
+                                description: Some("Simple and versatile".to_string()),
+                                emoji: None,
+                                default: false,
+                            },
+                            SelectOption {
+                                label: "TypeScript".to_string(),
+                                value: "typescript".to_string(),
+                                description: Some("Typed JavaScript".to_string()),
+                                emoji: None,
+                                default: false,
+                            },
+                            SelectOption {
+                                label: "Go".to_string(),
+                                value: "go".to_string(),
+                                description: Some("Simple and efficient".to_string()),
+                                emoji: None,
+                                default: false,
+                            },
+                        ],
+                    )])]),
+                    ..Default::default()
+                }),
+            }
+        }
+
         _ => {
             info!(command = name, "unknown slash command");
             InteractionResponse {
@@ -708,7 +833,7 @@ async fn handle_slash_command(
         }
     };
 
-    http.create_interaction_response(&interaction.id, &interaction.token, &response)
+    http.create_interaction_response(interaction.id.as_str(), &interaction.token, &response)
         .await?;
     Ok(())
 }
@@ -748,7 +873,7 @@ async fn handle_component(
             }),
         };
 
-        http.create_interaction_response(&interaction.id, &interaction.token, &response)
+        http.create_interaction_response(interaction.id.as_str(), &interaction.token, &response)
             .await?;
     } else if !data.values.is_empty() {
         // Select menu response.
@@ -762,7 +887,7 @@ async fn handle_component(
                 ..Default::default()
             }),
         };
-        http.create_interaction_response(&interaction.id, &interaction.token, &response)
+        http.create_interaction_response(interaction.id.as_str(), &interaction.token, &response)
             .await?;
     } else {
         info!(custom_id, "unhandled component interaction");
@@ -821,7 +946,7 @@ async fn handle_modal_submit(
             }),
         };
 
-        http.create_interaction_response(&interaction.id, &interaction.token, &response)
+        http.create_interaction_response(interaction.id.as_str(), &interaction.token, &response)
             .await?;
     }
 
@@ -841,7 +966,11 @@ fn format_guild_info(guild: &Guild) -> String {
         .approximate_presence_count
         .map(|n| n.to_string())
         .unwrap_or_else(|| "unknown".to_string());
-    let owner_id = guild.owner_id.as_deref().unwrap_or("unknown");
+    let owner_id = guild
+        .owner_id
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or("unknown");
     let created_at = guild
         .created_at_ms()
         .and_then(|ms| chrono::DateTime::from_timestamp_millis(ms as i64))
@@ -887,6 +1016,8 @@ fn help_text() -> String {
      \n\
      *Slash commands:*\n\
      • `/ping` `/uptime` `/roll` `/serverinfo` `/whoami` `/count` `/first` `/help`\n\
-     • `/report` — Submit a report via a pop-up form"
+     • `/report` — Submit a report via a pop-up form\n\
+     • `/send-logo` — Send the bot logo\n\
+     • `/demo-select` — Demo the select menu component"
         .to_string()
 }

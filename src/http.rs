@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::types::*;
+use serde_json::json;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -383,6 +384,86 @@ impl DiscordHttpClient {
             .await
     }
 
+    /// Send a message with a file attachment to a channel.
+    pub async fn send_message_with_file(
+        &self,
+        channel_id: &str,
+        content: Option<&str>,
+        filename: &str,
+        file_content: Vec<u8>,
+    ) -> Result<Message, HttpError> {
+        let path = format!("channels/{}/messages", channel_id);
+        let route_key = format!("POST /channels/{}/messages", channel_id);
+        let url = format!("{}/{}", BASE_URL, path.trim_start_matches('/'));
+
+        // Build multipart form
+        let mut form = reqwest::multipart::Form::new().part(
+            "file",
+            reqwest::multipart::Part::bytes(file_content).file_name(filename.to_string()),
+        );
+
+        // Add payload_json if content is provided
+        if let Some(text) = content {
+            let payload = json!({
+                "content": text
+            });
+            form = form.text("payload_json", payload.to_string());
+        }
+
+        // Wait for rate limit
+        {
+            let limiter = self.limiter.lock().await;
+            if let Some(delay) = limiter.delay_for(&route_key) {
+                let delay = delay.min(Duration::from_secs(60));
+                drop(limiter);
+                debug!(
+                    route = route_key,
+                    delay_ms = delay.as_millis() as u64,
+                    "rate-limit pre-emptive backoff"
+                );
+                tokio::time::sleep(delay).await;
+            }
+        }
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bot {}", self.token))
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| HttpError::Transport(e.to_string()))?;
+
+        // Parse rate-limit headers
+        let rl_info = parse_rate_limit_headers(resp.headers());
+        let status = resp.status();
+
+        // Update the limiter
+        {
+            let mut limiter = self.limiter.lock().await;
+            limiter.update(&route_key, &rl_info);
+        }
+
+        let resp_bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| HttpError::Transport(e.to_string()))?;
+
+        if status.is_success() {
+            serde_json::from_slice(&resp_bytes).map_err(|e| {
+                let raw = String::from_utf8_lossy(&resp_bytes);
+                HttpError::Serde(format!("{}: {}", e, &raw[..raw.len().min(200)]))
+            })
+        } else {
+            let body_str = String::from_utf8_lossy(&resp_bytes).to_string();
+            Err(HttpError::Api {
+                status: status.as_u16(),
+                body: body_str,
+                route: route_key.to_string(),
+            })
+        }
+    }
+
     /// Fetch messages from a channel. `params` are appended as query string
     /// (e.g. `limit=100&before=1234`).
     pub async fn get_messages(
@@ -522,7 +603,7 @@ impl DiscordHttpClient {
 
             count += messages.len();
 
-            before = messages.last().map(|m| m.id.clone());
+            before = messages.last().map(|m| m.id.as_str().to_string());
 
             if messages.len() < 100 {
                 break;
