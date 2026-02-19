@@ -3,15 +3,39 @@ pub mod gateway;
 pub mod http;
 pub mod types;
 
+use beet::prelude::*;
 use std::collections::HashSet;
 use std::time::Instant;
-
 use tracing::{error, info, warn};
 
 use crate::events::GatewayEvent;
 use crate::gateway::GatewayConfig;
 use crate::http::DiscordHttpClient;
 use crate::types::*;
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+pub fn run() {
+    // Initialise tracing (respects RUST_LOG env, defaults to info).
+    // tracing_subscriber::fmt()
+    //     .with_env_filter(
+    //         tracing_subscriber::EnvFilter::try_from_default_env()
+    //             .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+    //     )
+    //     .init();
+    App::new()
+        .add_plugins((MinimalPlugins, LogPlugin::default(), AsyncPlugin::default()))
+        .add_systems(Startup, start_client)
+        .run();
+}
+fn start_client(mut commands: AsyncCommands) {
+    commands.run_local(async |_| {
+        run_async().await;
+        Ok(())
+    })
+}
 
 // ---------------------------------------------------------------------------
 // Known guild IDs for fast slash-command registration during development
@@ -107,23 +131,6 @@ fn slash_commands() -> Vec<ApplicationCommand> {
             kind: 1,
         },
     ]
-}
-
-// ---------------------------------------------------------------------------
-// Entry point
-// ---------------------------------------------------------------------------
-
-pub fn run() {
-    // Initialise tracing (respects RUST_LOG env, defaults to info).
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
-
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-    rt.block_on(run_async());
 }
 
 pub async fn run_async() {

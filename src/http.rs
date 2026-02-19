@@ -2,14 +2,17 @@
 //!
 //! All outbound HTTP calls go through [`DiscordHttpClient`] so that auth
 //! headers, rate-limit back-off, and error handling live in one place.
-//! The underlying `reqwest::Client` is an implementation detail — when we
-//! later swap transports we only need to touch this module.
+//! The beet `Request` / `Response` types are an implementation detail —
+//! swapping HTTP backends only requires touching this module.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
+
+use beet::core::prelude::{Request, ResponseParts, StatusCode};
+use beet::net::prelude::RequestClientExt;
 
 use crate::types::*;
 use serde_json::json;
@@ -89,7 +92,6 @@ impl RateLimiter {
             let reset_instant = if let Some(reset_after) = info.reset_after {
                 Instant::now() + Duration::from_secs_f64(reset_after)
             } else {
-                // Fallback: 1 second from now.
                 Instant::now() + Duration::from_secs(1)
             };
 
@@ -105,34 +107,29 @@ impl RateLimiter {
 }
 
 // ---------------------------------------------------------------------------
-// Parse rate-limit headers from a response
+// Parse rate-limit headers from response parts
 // ---------------------------------------------------------------------------
 
-fn parse_rate_limit_headers(headers: &reqwest::header::HeaderMap) -> RateLimitInfo {
-    let remaining = headers
-        .get("x-ratelimit-remaining")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<u32>().ok());
+fn parse_rate_limit_headers(parts: &ResponseParts) -> RateLimitInfo {
+    let remaining = parts
+        .get_header("x-ratelimit-remaining")
+        .and_then(|s: &str| s.parse::<u32>().ok());
 
-    let reset_at = headers
-        .get("x-ratelimit-reset")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<f64>().ok());
+    let reset_at = parts
+        .get_header("x-ratelimit-reset")
+        .and_then(|s: &str| s.parse::<f64>().ok());
 
-    let reset_after = headers
-        .get("x-ratelimit-reset-after")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<f64>().ok());
+    let reset_after = parts
+        .get_header("x-ratelimit-reset-after")
+        .and_then(|s: &str| s.parse::<f64>().ok());
 
-    let bucket = headers
-        .get("x-ratelimit-bucket")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
+    let bucket = parts
+        .get_header("x-ratelimit-bucket")
+        .map(|s: &str| s.to_string());
 
-    let is_global = headers
-        .get("x-ratelimit-global")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s == "true")
+    let is_global = parts
+        .get_header("x-ratelimit-global")
+        .map(|s: &str| s == "true")
         .unwrap_or(false);
 
     RateLimitInfo {
@@ -145,7 +142,7 @@ fn parse_rate_limit_headers(headers: &reqwest::header::HeaderMap) -> RateLimitIn
 }
 
 // ---------------------------------------------------------------------------
-// HTTP method enum (so callers don't pull in reqwest types)
+// HTTP method enum
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy)]
@@ -183,7 +180,9 @@ impl std::fmt::Display for HttpError {
                 status,
                 body,
                 route,
-            } => write!(f, "Discord API error {} on {}: {}", status, route, body),
+            } => {
+                write!(f, "Discord API error {} on {}: {}", status, route, body)
+            }
             HttpError::Transport(e) => write!(f, "HTTP transport error: {}", e),
             HttpError::Serde(e) => write!(f, "Serialisation error: {}", e),
         }
@@ -202,24 +201,33 @@ impl std::error::Error for HttpError {}
 #[derive(Clone)]
 pub struct DiscordHttpClient {
     token: String,
-    client: reqwest::Client,
     limiter: Arc<Mutex<RateLimiter>>,
 }
 
 impl DiscordHttpClient {
     /// Create a new client with the given bot token.
     pub fn new(token: impl Into<String>) -> Self {
-        let client = reqwest::Client::builder()
-            .user_agent(USER_AGENT)
-            .timeout(Duration::from_secs(30))
-            .build()
-            .expect("failed to build reqwest client");
-
         Self {
             token: token.into(),
-            client,
             limiter: Arc::new(Mutex::new(RateLimiter::new())),
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Internal helper: build a base Request with auth + user-agent
+    // ------------------------------------------------------------------
+
+    fn build_request(&self, method: Method, url: &str) -> Request {
+        let mut req = match method {
+            Method::Get => Request::get(url),
+            Method::Post => Request::post(url),
+            Method::Put => Request::put(url),
+            Method::Patch => Request::patch(url),
+            Method::Delete => Request::delete(url),
+        };
+        req.insert_header("authorization", format!("Bot {}", self.token));
+        req.insert_header("user-agent", USER_AGENT);
+        req
     }
 
     // ------------------------------------------------------------------
@@ -229,8 +237,7 @@ impl DiscordHttpClient {
     /// Send a request to `{BASE_URL}/{path}`.
     ///
     /// `route_key` is used for per-route rate-limit bucketing. It should be a
-    /// template like `POST /channels/{channel_id}/messages` (major params
-    /// filled in, minor params left out).
+    /// template like `POST /channels/{channel_id}/messages`.
     ///
     /// Returns the raw response body as bytes on success.
     pub async fn request(
@@ -240,7 +247,6 @@ impl DiscordHttpClient {
         route_key: &str,
         body: Option<&serde_json::Value>,
     ) -> Result<Vec<u8>, HttpError> {
-        // Retry loop for rate-limit 429s.
         let max_retries = 5;
         for attempt in 0..=max_retries {
             // Pre-request: wait if the rate limiter says so.
@@ -248,7 +254,7 @@ impl DiscordHttpClient {
                 let limiter = self.limiter.lock().await;
                 if let Some(delay) = limiter.delay_for(route_key) {
                     let delay = delay.min(Duration::from_secs(60));
-                    drop(limiter); // release lock while sleeping
+                    drop(limiter);
                     debug!(
                         route = route_key,
                         delay_ms = delay.as_millis() as u64,
@@ -260,33 +266,21 @@ impl DiscordHttpClient {
 
             let url = format!("{}/{}", BASE_URL, path.trim_start_matches('/'));
 
-            let reqwest_method = match method {
-                Method::Get => reqwest::Method::GET,
-                Method::Post => reqwest::Method::POST,
-                Method::Put => reqwest::Method::PUT,
-                Method::Patch => reqwest::Method::PATCH,
-                Method::Delete => reqwest::Method::DELETE,
+            let req = self.build_request(method, &url);
+            let req = if let Some(json) = body {
+                req.with_json_body(json)
+                    .map_err(|e| HttpError::Serde(e.to_string()))?
+            } else {
+                req
             };
 
-            let mut builder = self
-                .client
-                .request(reqwest_method, &url)
-                .header("Authorization", format!("Bot {}", self.token));
-
-            if let Some(json) = body {
-                builder = builder
-                    .header("Content-Type", "application/json")
-                    .json(json);
-            }
-
-            let resp = builder
+            let resp = req
                 .send()
                 .await
                 .map_err(|e| HttpError::Transport(e.to_string()))?;
 
-            // Parse rate-limit headers *before* consuming the body.
-            let rl_info = parse_rate_limit_headers(resp.headers());
             let status = resp.status();
+            let rl_info = parse_rate_limit_headers(resp.response_parts());
 
             // Update the limiter regardless of status.
             {
@@ -294,8 +288,7 @@ impl DiscordHttpClient {
                 limiter.update(route_key, &rl_info);
             }
 
-            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                // Discord tells us how long to wait.
+            if status == StatusCode::RateLimitExceeded {
                 let retry_after = rl_info.reset_after.unwrap_or(1.0);
                 let delay = Duration::from_secs_f64(retry_after.min(60.0));
                 warn!(
@@ -315,21 +308,21 @@ impl DiscordHttpClient {
                     tokio::time::sleep(delay).await;
                     continue;
                 }
-                // Fall through to the error path below.
             }
 
             let resp_bytes = resp
                 .bytes()
                 .await
-                .map_err(|e| HttpError::Transport(e.to_string()))?;
+                .map_err(|e: beet::core::prelude::BevyError| HttpError::Transport(e.to_string()))?;
 
-            if status.is_success() {
+            if status.is_ok() {
                 return Ok(resp_bytes.to_vec());
             }
 
+            let status_u16 = status_to_u16(status);
             let body_str = String::from_utf8_lossy(&resp_bytes).to_string();
             return Err(HttpError::Api {
-                status: status.as_u16(),
+                status: status_u16,
                 body: body_str,
                 route: route_key.to_string(),
             });
@@ -396,21 +389,7 @@ impl DiscordHttpClient {
         let route_key = format!("POST /channels/{}/messages", channel_id);
         let url = format!("{}/{}", BASE_URL, path.trim_start_matches('/'));
 
-        // Build multipart form
-        let mut form = reqwest::multipart::Form::new().part(
-            "file",
-            reqwest::multipart::Part::bytes(file_content).file_name(filename.to_string()),
-        );
-
-        // Add payload_json if content is provided
-        if let Some(text) = content {
-            let payload = json!({
-                "content": text
-            });
-            form = form.text("payload_json", payload.to_string());
-        }
-
-        // Wait for rate limit
+        // Pre-request rate-limit wait.
         {
             let limiter = self.limiter.lock().await;
             if let Some(delay) = limiter.delay_for(&route_key) {
@@ -425,20 +404,23 @@ impl DiscordHttpClient {
             }
         }
 
-        let resp = self
-            .client
-            .post(&url)
-            .header("Authorization", format!("Bot {}", self.token))
-            .multipart(form)
+        // Build the multipart body manually.
+        let boundary = format!("BeetBoundary{:016x}", rand::random::<u64>());
+        let body_bytes = build_multipart(&boundary, content, filename, &file_content);
+        let content_type = format!("multipart/form-data; boundary={}", boundary);
+
+        let mut req = self.build_request(Method::Post, &url);
+        req.insert_header("content-type", content_type);
+        let req = req.with_body(body_bytes);
+
+        let resp = req
             .send()
             .await
-            .map_err(|e| HttpError::Transport(e.to_string()))?;
+            .map_err(|e: beet::core::prelude::BevyError| HttpError::Transport(e.to_string()))?;
 
-        // Parse rate-limit headers
-        let rl_info = parse_rate_limit_headers(resp.headers());
         let status = resp.status();
+        let rl_info = parse_rate_limit_headers(resp.response_parts());
 
-        // Update the limiter
         {
             let mut limiter = self.limiter.lock().await;
             limiter.update(&route_key, &rl_info);
@@ -447,24 +429,25 @@ impl DiscordHttpClient {
         let resp_bytes = resp
             .bytes()
             .await
-            .map_err(|e| HttpError::Transport(e.to_string()))?;
+            .map_err(|e: beet::core::prelude::BevyError| HttpError::Transport(e.to_string()))?;
 
-        if status.is_success() {
+        if status.is_ok() {
             serde_json::from_slice(&resp_bytes).map_err(|e| {
                 let raw = String::from_utf8_lossy(&resp_bytes);
                 HttpError::Serde(format!("{}: {}", e, &raw[..raw.len().min(200)]))
             })
         } else {
+            let status_u16 = status_to_u16(status);
             let body_str = String::from_utf8_lossy(&resp_bytes).to_string();
             Err(HttpError::Api {
-                status: status.as_u16(),
+                status: status_u16,
                 body: body_str,
                 route: route_key.to_string(),
             })
         }
     }
 
-    /// Fetch messages from a channel. `params` are appended as query string
+    /// Fetch messages from a channel. `query` is appended as a query string
     /// (e.g. `limit=100&before=1234`).
     pub async fn get_messages(
         &self,
@@ -506,7 +489,7 @@ impl DiscordHttpClient {
         );
         let route_key = "POST /interactions/callback".to_string();
         let body = serde_json::to_value(response).map_err(|e| HttpError::Serde(e.to_string()))?;
-        // Discord returns 204 No Content on success, so we don't parse JSON.
+        // Discord returns 204 No Content on success — don't parse JSON.
         self.request(Method::Post, &path, &route_key, Some(&body))
             .await?;
         Ok(())
@@ -581,14 +564,14 @@ impl DiscordHttpClient {
     }
 
     // ------------------------------------------------------------------
-    // Higher-level helpers (ported from old main.rs)
+    // Higher-level helpers
     // ------------------------------------------------------------------
 
     /// Count messages in a channel by paginating backwards. Caps at 10 000.
     pub async fn count_messages(&self, channel_id: &str) -> Result<usize, HttpError> {
         let mut count = 0usize;
         let mut before: Option<String> = None;
-        let max_pages = 100; // 100 × 100 = 10 000
+        let max_pages = 100;
 
         for _ in 0..max_pages {
             let query = match &before {
@@ -603,7 +586,6 @@ impl DiscordHttpClient {
             }
 
             count += messages.len();
-
             before = messages.last().map(|m| m.id.as_str().to_string());
 
             if messages.len() < 100 {
@@ -629,7 +611,78 @@ impl DiscordHttpClient {
 impl std::fmt::Debug for DiscordHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DiscordHttpClient")
-            .field("token", &"[redacted]")
+            .field("token", &"<redacted>")
             .finish()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Convert a beet `StatusCode` to a raw HTTP status `u16`.
+fn status_to_u16(status: StatusCode) -> u16 {
+    match status {
+        StatusCode::Ok => 200,
+        StatusCode::Created => 201,
+        StatusCode::MovedPermanently => 301,
+        StatusCode::TemporaryRedirect => 307,
+        StatusCode::MalformedRequest => 400,
+        StatusCode::Unauthorized => 401,
+        StatusCode::Forbidden => 403,
+        StatusCode::NotFound => 404,
+        StatusCode::MethodNotAllowed => 405,
+        StatusCode::RequestTimeout => 408,
+        StatusCode::Conflict => 409,
+        StatusCode::PayloadTooLarge => 413,
+        StatusCode::RateLimitExceeded => 429,
+        StatusCode::InternalError => 500,
+        StatusCode::NotImplemented => 501,
+        StatusCode::ServiceUnavailable => 503,
+        StatusCode::GatewayTimeout => 504,
+        StatusCode::Http(s) => s.as_u16(),
+        _ => 0,
+    }
+}
+
+/// Build a multipart/form-data body as raw bytes.
+///
+/// Produces parts for an optional `payload_json` text field and a
+/// required file part named `"file"`.
+fn build_multipart(
+    boundary: &str,
+    content: Option<&str>,
+    filename: &str,
+    file_data: &[u8],
+) -> Vec<u8> {
+    let mut buf: Vec<u8> = Vec::new();
+
+    // Optional payload_json field.
+    if let Some(text) = content {
+        let payload = json!({ "content": text }).to_string();
+        buf.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+        buf.extend_from_slice(b"Content-Disposition: form-data; name=\"payload_json\"\r\n");
+        buf.extend_from_slice(b"Content-Type: application/json\r\n\r\n");
+        buf.extend_from_slice(payload.as_bytes());
+        buf.extend_from_slice(b"\r\n");
+    }
+
+    // File part.
+    buf.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    buf.extend_from_slice(
+        format!(
+            "Content-Disposition: form-data; name=\"file\"; \
+             filename=\"{}\"\r\n",
+            filename
+        )
+        .as_bytes(),
+    );
+    buf.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    buf.extend_from_slice(file_data);
+    buf.extend_from_slice(b"\r\n");
+
+    // Closing boundary.
+    buf.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+
+    buf
 }

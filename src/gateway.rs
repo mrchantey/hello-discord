@@ -8,13 +8,14 @@
 //!   - gateway send rate limiting (120 events / 60s)
 //!
 //! The rest of the codebase consumes a stream of [`GatewayEvent`] values
-//! without ever touching `tokio_tungstenite` directly — when we later swap
-//! transports we only need to touch this file.
+//! without ever touching the underlying WebSocket transport directly — when
+//! we swap transports we only need to touch this file.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
+use beet::net::prelude::sockets::{CloseFrame, Message, Socket, SocketRead, SocketWrite};
+use beet::net::prelude::StreamExt;
 use serde_json::json;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info, warn};
@@ -57,54 +58,41 @@ impl SendRateLimiter {
         }
     }
 
-    /// Returns how long the caller should wait before sending, or `None` if
-    /// it can send immediately.  Does **not** record the send — call
-    /// [`record`] after actually sending.
+    /// Returns how long the caller must wait before the next send is allowed,
+    /// or `None` if a send is allowed immediately.
     fn delay(&self) -> Option<Duration> {
-        if (self.timestamps.len() as u32) < self.budget {
-            return None;
-        }
-
         let now = Instant::now();
-        // Prune timestamps outside the window conceptually — we just look at
-        // how many are still inside.
-        let in_window = self
-            .timestamps
-            .iter()
-            .filter(|&&t| now.duration_since(t) < self.window)
-            .count() as u32;
+        let cutoff = now - self.window;
 
-        if in_window < self.budget {
+        // Count sends still within the window.
+        let recent = self.timestamps.iter().filter(|&&t| t > cutoff).count() as u32;
+
+        if recent < self.budget {
             return None;
         }
 
-        // We're at capacity.  Find the oldest timestamp inside the window and
-        // compute how long until it expires.
-        let oldest_in_window = self
+        // Find the oldest timestamp still in the window.
+        let oldest = self
             .timestamps
             .iter()
-            .filter(|&&t| now.duration_since(t) < self.window)
-            .min()
-            .copied();
+            .filter(|&&t| t > cutoff)
+            .copied()
+            .min()?;
 
-        match oldest_in_window {
-            Some(oldest) => {
-                let expires_at = oldest + self.window;
-                if expires_at > now {
-                    Some(expires_at - now)
-                } else {
-                    None
-                }
-            }
-            None => None,
+        // We can send again once `oldest` ages out of the window.
+        let reset_at = oldest + self.window;
+        if reset_at > now {
+            Some(reset_at - now)
+        } else {
+            None
         }
     }
 
-    /// Record a send at the current instant and prune old entries.
+    /// Record that a send just happened.
     fn record(&mut self) {
         let now = Instant::now();
-        self.timestamps
-            .retain(|&t| now.duration_since(t) < self.window);
+        let cutoff = now - self.window;
+        self.timestamps.retain(|&t| t > cutoff);
         self.timestamps.push(now);
     }
 }
@@ -136,19 +124,6 @@ struct SessionState {
     /// Monotonically increasing sequence counter.
     sequence: Option<u64>,
 }
-
-// ---------------------------------------------------------------------------
-// WebSocket writer wrapper (transport boundary)
-// ---------------------------------------------------------------------------
-
-type WsSink = futures_util::stream::SplitSink<
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-    tokio_tungstenite::tungstenite::Message,
->;
-
-type WsStream = futures_util::stream::SplitStream<
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
->;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -203,9 +178,6 @@ async fn gateway_driver(
     let mut reconnect_attempts: u32 = 0;
 
     loop {
-        // Decide which URL to connect to.
-        // Use the default URL on each iteration to avoid stale resume URLs.
-        // We only use resume_gateway_url for the immediate reconnect attempt after disconnect.
         let url = DEFAULT_GATEWAY_URL.to_string();
 
         // Append query params if the resume URL doesn't already have them.
@@ -219,24 +191,24 @@ async fn gateway_driver(
 
         info!(url = %url, "connecting to Discord gateway");
 
-        // Check if we're attempting to resume this session
+        // Check if we're attempting to resume this session.
         let attempting_resume = {
             let s = session.lock().await;
             s.session_id.is_some() && s.sequence.is_some()
         };
 
-        let ws_result = tokio_tungstenite::connect_async(&url).await;
+        let socket_result = Socket::connect(&url).await;
 
-        let (ws_stream, _) = match ws_result {
-            Ok(pair) => {
+        let socket = match socket_result {
+            Ok(s) => {
                 reconnect_attempts = 0;
-                pair
+                s
             }
             Err(e) => {
                 error!(error = %e, "failed to connect to gateway");
 
-                // If we were trying to resume and it failed, clear session state
-                // so we fall back to IDENTIFY on the next attempt
+                // If we were trying to resume and it failed, clear session
+                // state so we fall back to IDENTIFY on the next attempt.
                 if attempting_resume {
                     warn!("resume failed, clearing session state to re-identify");
                     let mut s = session.lock().await;
@@ -263,7 +235,7 @@ async fn gateway_driver(
 
         info!("WebSocket connected");
 
-        let (ws_write, mut ws_read) = ws_stream.split();
+        let (ws_write, mut ws_read) = socket.split();
         let ws_write = Arc::new(Mutex::new(ws_write));
         let rate_limiter = Arc::new(Mutex::new(SendRateLimiter::new(
             SEND_BUDGET_MAX,
@@ -409,9 +381,7 @@ async fn gateway_driver(
         // Try to close the WS gracefully.
         {
             let mut w = ws_write.lock().await;
-            let _ = w
-                .send(tokio_tungstenite::tungstenite::Message::Close(None))
-                .await;
+            let _ = w.send(Message::Close(None)).await;
         }
 
         match disconnect_reason {
@@ -468,8 +438,8 @@ enum DisconnectReason {
 // ---------------------------------------------------------------------------
 
 async fn read_loop(
-    ws_read: &mut WsStream,
-    ws_write: &Arc<Mutex<WsSink>>,
+    ws_read: &mut SocketRead,
+    ws_write: &Arc<Mutex<SocketWrite>>,
     rate_limiter: &Arc<Mutex<SendRateLimiter>>,
     event_tx: &mpsc::Sender<GatewayEvent>,
     session: &Arc<Mutex<SessionState>>,
@@ -502,7 +472,7 @@ async fn read_loop(
                 };
 
                 match msg {
-                    tokio_tungstenite::tungstenite::Message::Text(text) => {
+                    Message::Text(text) => {
                         let payload: GatewayPayload = match serde_json::from_str(&text) {
                             Ok(p) => p,
                             Err(e) => {
@@ -559,7 +529,6 @@ async fn read_loop(
                             GatewayEvent::InvalidSession(resumable) => {
                                 warn!(resumable, "session invalidated (op 9)");
                                 if *resumable {
-                                    // Wait a bit, then resume.
                                     tokio::time::sleep(Duration::from_secs(2)).await;
                                     return DisconnectReason::ShouldResume;
                                 } else {
@@ -569,7 +538,7 @@ async fn read_loop(
                             }
 
                             ev => {
-                             debug!(event = ?ev, "unhandled gateway event");
+                                debug!(event = ?ev, "unhandled gateway event");
                             }
                         }
 
@@ -580,14 +549,11 @@ async fn read_loop(
                         }
                     }
 
-                    tokio_tungstenite::tungstenite::Message::Close(frame) => {
+                    Message::Close(frame) => {
                         let code = frame.as_ref().map(|f| f.code);
                         warn!(close_code = ?code, "WebSocket closed by server");
 
-                        // Certain close codes are fatal (authentication failed,
-                        // invalid intents, etc.).
-                        if let Some(frame) = &frame {
-                            let raw: u16 = frame.code.into();
+                        if let Some(CloseFrame { code: raw, .. }) = frame {
                             match raw {
                                 4004 => {
                                     error!("authentication failed (close 4004)");
@@ -614,12 +580,10 @@ async fn read_loop(
                                     return DisconnectReason::Fatal;
                                 }
                                 4007 | 4009 => {
-                                    // Invalid seq or session timed out — re-identify.
                                     return DisconnectReason::ShouldReidentify;
                                 }
-                                code => {
-                                    warn!(close_code = code, "unrecognized close code, will attempt to resume");
-                                    // Everything else: try to resume.
+                                c => {
+                                    warn!(close_code = c, "unrecognized close code, will attempt to resume");
                                     return DisconnectReason::ShouldResume;
                                 }
                             }
@@ -628,7 +592,7 @@ async fn read_loop(
                         return DisconnectReason::ShouldResume;
                     }
 
-                    // Ping/Pong/Binary — ignore.
+                    // Ping / Pong / Binary — ignore.
                     _ => {}
                 }
             }
@@ -641,7 +605,7 @@ async fn read_loop(
 // ---------------------------------------------------------------------------
 
 /// Read the HELLO payload from an already-split stream reference.
-async fn read_hello_from_stream(stream: &mut WsStream) -> Result<u64, String> {
+async fn read_hello_from_stream(stream: &mut SocketRead) -> Result<u64, String> {
     let msg = tokio::time::timeout(Duration::from_secs(30), stream.next())
         .await
         .map_err(|_| "timed out waiting for HELLO".to_string())?
@@ -649,7 +613,7 @@ async fn read_hello_from_stream(stream: &mut WsStream) -> Result<u64, String> {
         .map_err(|e| format!("WS error reading HELLO: {}", e))?;
 
     let text = match msg {
-        tokio_tungstenite::tungstenite::Message::Text(t) => t,
+        Message::Text(t) => t,
         other => return Err(format!("expected text message for HELLO, got {:?}", other)),
     };
 
@@ -672,7 +636,7 @@ async fn read_hello_from_stream(stream: &mut WsStream) -> Result<u64, String> {
 
 /// Send a JSON payload on the WebSocket, respecting the send rate limiter.
 async fn rate_limited_send(
-    ws_write: &Arc<Mutex<WsSink>>,
+    ws_write: &Arc<Mutex<SocketWrite>>,
     rate_limiter: &Arc<Mutex<SendRateLimiter>>,
     payload: &serde_json::Value,
 ) -> Result<(), String> {
@@ -703,7 +667,7 @@ async fn rate_limited_send(
     let text = serde_json::to_string(payload).map_err(|e| e.to_string())?;
 
     let mut w = ws_write.lock().await;
-    w.send(tokio_tungstenite::tungstenite::Message::Text(text))
+    w.send(Message::Text(text))
         .await
         .map_err(|e| format!("WS send error: {}", e))
 }

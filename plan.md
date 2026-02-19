@@ -1,6 +1,13 @@
-# Discord Bot — TODO
+Lets keep migrating from tokio to beet, which uses `async_` ecosystem, ie async_channel, async_io etc.
 
-Lets keep iterating on our discord bot.
+- remove `Method`, use beets HttpMethod
 
 
-Its not true that global slash commands take an hour to propagate, remove this global/dev env var commands picking and clearing of the other one, always update globally but keep the api endpoint cos its interesting.
+In general we should be leaning into beet/bevy paradigms, see beet examples for more info.
+
+ie `../beet/examples/net/socket_client`
+
+measure success by:
+1. tokio is removed
+2. `cargo run` actually spins up the server
+use timeout, cos it will not return by itself.
