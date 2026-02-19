@@ -245,6 +245,14 @@ pub async fn run_async() {
                     continue;
                 }
 
+                info!(
+                    message_id = %msg.id,
+                    author = %msg.author.tag(),
+                    channel_id = %msg.channel_id,
+                    content = %msg.content,
+                    "handling message"
+                );
+
                 // Update greet channel if not set.
                 if greet_channel_id.is_none() {
                     greet_channel_id = Some(msg.channel_id.as_str().to_string());
@@ -749,7 +757,7 @@ async fn handle_slash_command(
         }
 
         "demo-select" => {
-            use crate::types::{SelectOption, string_select};
+            use crate::types::{string_select, SelectOption};
 
             InteractionResponse {
                 kind: InteractionCallbackType::ChannelMessageWithSource,
