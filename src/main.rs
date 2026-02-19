@@ -22,11 +22,6 @@ use crate::types::*;
 // Known guild IDs for fast slash-command registration during development
 // ---------------------------------------------------------------------------
 
-const DEV_GUILD_IDS: &[&str] = &[
-    "807465587633553409",  // chantey's server
-    "1229266524427260057", // beetmash
-];
-
 // ---------------------------------------------------------------------------
 // Slash command definitions
 // ---------------------------------------------------------------------------
@@ -184,64 +179,20 @@ async fn main() {
                 application_id = Some(ready.application.id.as_str().to_string());
                 info!(guilds = ready.guilds.len(), "connected to guilds");
 
-                // Register slash commands based on SLASH_COMMAND_MODE config.
+                // Register slash commands globally.
                 // Only register if we haven't already registered for this application_id
                 // to avoid duplicates across reconnects.
                 if commands_registered_for_app.as_ref() != application_id.as_ref() {
                     if let Some(ref app_id) = application_id {
                         let cmds = slash_commands();
-                        let mode = std::env::var("SLASH_COMMAND_MODE")
-                            .unwrap_or_else(|_| "guild".to_string());
-
-                        if mode == "global" {
-                            // Register globally (takes up to an hour to propagate).
-                            match http.bulk_overwrite_global_commands(app_id, &cmds).await {
-                                Ok(registered) => {
-                                    info!(count = registered.len(), "registered global slash commands (may take up to 1 hour to propagate)");
-                                }
-                                Err(e) => {
-                                    warn!(error = %e, "failed to register global commands");
-                                }
+                        match http.bulk_overwrite_global_commands(app_id, &cmds).await {
+                            Ok(registered) => {
+                                info!(count = registered.len(), "registered global slash commands");
                             }
-                            // Clear guild commands to avoid duplicates when switching modes
-                            for guild_id in DEV_GUILD_IDS {
-                                match http
-                                    .bulk_overwrite_guild_commands(app_id, guild_id, &[])
-                                    .await
-                                {
-                                    Ok(_) => info!(guild_id, "cleared guild commands"),
-                                    Err(e) => {
-                                        warn!(guild_id, error = %e, "failed to clear guild commands")
-                                    }
-                                }
-                            }
-                        } else {
-                            // Default: Register for dev guilds only (fast propagation).
-                            info!(mode = %mode, "registering guild-scoped slash commands for fast development");
-                            for guild_id in DEV_GUILD_IDS {
-                                match http
-                                    .bulk_overwrite_guild_commands(app_id, guild_id, &cmds)
-                                    .await
-                                {
-                                    Ok(registered) => {
-                                        info!(
-                                            guild_id,
-                                            count = registered.len(),
-                                            "registered guild slash commands"
-                                        );
-                                    }
-                                    Err(e) => {
-                                        warn!(guild_id, error = %e, "failed to register guild commands");
-                                    }
-                                }
-                            }
-                            // Clear global commands to avoid duplicates when switching modes
-                            match http.bulk_overwrite_global_commands(app_id, &[]).await {
-                                Ok(_) => info!("cleared global commands"),
-                                Err(e) => warn!(error = %e, "failed to clear global commands"),
+                            Err(e) => {
+                                warn!(error = %e, "failed to register global commands");
                             }
                         }
-
                         commands_registered_for_app = Some(app_id.clone());
                     }
                 }

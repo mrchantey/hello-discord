@@ -534,6 +534,7 @@ impl DiscordHttpClient {
     // ------------------------------------------------------------------
 
     /// Register (or overwrite) guild-scoped application commands.
+    #[allow(unused)]
     pub async fn bulk_overwrite_guild_commands(
         &self,
         application_id: &str,
