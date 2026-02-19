@@ -554,7 +554,9 @@ async fn read_loop(
                                 }
                             }
 
-                            _ => {}
+                            ev => {
+                             debug!(event = ?ev, "unhandled gateway event");
+                            }
                         }
 
                         // Forward to bot.
@@ -601,7 +603,8 @@ async fn read_loop(
                                     // Invalid seq or session timed out — re-identify.
                                     return DisconnectReason::ShouldReidentify;
                                 }
-                                _ => {
+                                code => {
+                                    warn!(close_code = code, "unrecognized close code, will attempt to resume");
                                     // Everything else: try to resume.
                                     return DisconnectReason::ShouldResume;
                                 }

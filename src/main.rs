@@ -469,7 +469,9 @@ async fn main() {
                         }
                     }
 
-                    _ => {}
+                    unhandled => {
+                        info!(command = unhandled, "not a command, ignoring");
+                    }
                 }
             }
 
