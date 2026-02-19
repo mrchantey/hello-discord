@@ -204,12 +204,9 @@ async fn gateway_driver(
 
     loop {
         // Decide which URL to connect to.
-        let url = {
-            let s = session.lock().await;
-            s.resume_gateway_url
-                .clone()
-                .unwrap_or_else(|| DEFAULT_GATEWAY_URL.to_string())
-        };
+        // Use the default URL on each iteration to avoid stale resume URLs.
+        // We only use resume_gateway_url for the immediate reconnect attempt after disconnect.
+        let url = DEFAULT_GATEWAY_URL.to_string();
 
         // Append query params if the resume URL doesn't already have them.
         let url = if url.contains("v=10") {
@@ -222,6 +219,12 @@ async fn gateway_driver(
 
         info!(url = %url, "connecting to Discord gateway");
 
+        // Check if we're attempting to resume this session
+        let attempting_resume = {
+            let s = session.lock().await;
+            s.session_id.is_some() && s.sequence.is_some()
+        };
+
         let ws_result = tokio_tungstenite::connect_async(&url).await;
 
         let (ws_stream, _) = match ws_result {
@@ -231,6 +234,17 @@ async fn gateway_driver(
             }
             Err(e) => {
                 error!(error = %e, "failed to connect to gateway");
+
+                // If we were trying to resume and it failed, clear session state
+                // so we fall back to IDENTIFY on the next attempt
+                if attempting_resume {
+                    warn!("resume failed, clearing session state to re-identify");
+                    let mut s = session.lock().await;
+                    s.session_id = None;
+                    s.sequence = None;
+                    s.resume_gateway_url = None;
+                }
+
                 reconnect_attempts += 1;
                 if reconnect_attempts > MAX_RECONNECT_ATTEMPTS {
                     error!("exceeded max reconnect attempts, giving up");
@@ -410,7 +424,7 @@ async fn gateway_driver(
                 let mut s = session.lock().await;
                 s.session_id = None;
                 s.sequence = None;
-                // Keep resume_gateway_url for the next attempt.
+                s.resume_gateway_url = None;
             }
             DisconnectReason::Fatal => {
                 error!("fatal gateway error, shutting down");

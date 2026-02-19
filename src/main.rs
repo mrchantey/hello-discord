@@ -165,12 +165,14 @@ async fn main() {
         }
     };
 
-    // Bot state
+    // Bot state - use lazy_static or similar to persist across reconnects in a real app
+    // For now, we track if we've registered commands THIS session to avoid duplicates
     let mut bot_user_id: Option<String> = None;
     let mut application_id: Option<String> = None;
     let mut greeted_users: HashSet<String> = HashSet::new();
     let mut greet_channel_id: Option<String> = None;
-    let mut commands_registered = false;
+    // Track commands registered per application_id to avoid duplicates across reconnects
+    let mut commands_registered_for_app: Option<String> = None;
 
     // Main event loop — fully typed, no raw serde_json in sight.
     while let Some(event) = gw.events.recv().await {
@@ -183,7 +185,9 @@ async fn main() {
                 info!(guilds = ready.guilds.len(), "connected to guilds");
 
                 // Register slash commands based on SLASH_COMMAND_MODE config.
-                if !commands_registered {
+                // Only register if we haven't already registered for this application_id
+                // to avoid duplicates across reconnects.
+                if commands_registered_for_app.as_ref() != application_id.as_ref() {
                     if let Some(ref app_id) = application_id {
                         let cmds = slash_commands();
                         let mode = std::env::var("SLASH_COMMAND_MODE")
@@ -197,6 +201,18 @@ async fn main() {
                                 }
                                 Err(e) => {
                                     warn!(error = %e, "failed to register global commands");
+                                }
+                            }
+                            // Clear guild commands to avoid duplicates when switching modes
+                            for guild_id in DEV_GUILD_IDS {
+                                match http
+                                    .bulk_overwrite_guild_commands(app_id, guild_id, &[])
+                                    .await
+                                {
+                                    Ok(_) => info!(guild_id, "cleared guild commands"),
+                                    Err(e) => {
+                                        warn!(guild_id, error = %e, "failed to clear guild commands")
+                                    }
                                 }
                             }
                         } else {
@@ -219,9 +235,14 @@ async fn main() {
                                     }
                                 }
                             }
+                            // Clear global commands to avoid duplicates when switching modes
+                            match http.bulk_overwrite_global_commands(app_id, &[]).await {
+                                Ok(_) => info!("cleared global commands"),
+                                Err(e) => warn!(error = %e, "failed to clear global commands"),
+                            }
                         }
 
-                        commands_registered = true;
+                        commands_registered_for_app = Some(app_id.clone());
                     }
                 }
             }
