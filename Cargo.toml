@@ -8,7 +8,7 @@ name = "hello_discord"
 path = "src/lib.rs"
 
 [features]
-default = ["native-tls"]
+default = ["rustls-tls"]
 native-tls = ["beet/native-tls"]
 rustls-tls = ["beet/rustls-tls"]
 
