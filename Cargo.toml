@@ -7,8 +7,13 @@ edition = "2021"
 name = "hello_discord"
 path = "src/lib.rs"
 
+[features]
+default = ["native-tls"]
+native-tls = ["beet/native-tls"]
+rustls-tls = ["beet/rustls-tls"]
+
 [dependencies]
-beet = { path = "../beet", features = ["net", "tungstenite", "native-tls", "ureq"] }
+beet = { path = "../beet", features = ["net", "tungstenite", "ureq"] }
 async-channel = "2"
 async-lock = "3"
 serde = { version = "1.0", features = ["derive"] }
