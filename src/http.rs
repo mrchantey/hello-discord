@@ -300,10 +300,9 @@ impl DiscordHttpClient {
                 return Ok(resp_bytes.to_vec());
             }
 
-            let status_u16 = status_to_u16(status);
             let body_str = String::from_utf8_lossy(&resp_bytes).to_string();
             return Err(HttpError::Api {
-                status: status_u16,
+                status: status.into_http(),
                 body: body_str,
                 route: route_key.to_string(),
             });
@@ -418,10 +417,9 @@ impl DiscordHttpClient {
                 HttpError::Serde(format!("{}: {}", e, &raw[..raw.len().min(200)]))
             })
         } else {
-            let status_u16 = status_to_u16(status);
             let body_str = String::from_utf8_lossy(&resp_bytes).to_string();
             Err(HttpError::Api {
-                status: status_u16,
+                status: status.into_http(),
                 body: body_str,
                 route: route_key.to_string(),
             })
@@ -600,31 +598,6 @@ impl std::fmt::Debug for DiscordHttpClient {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Convert a beet `StatusCode` to a raw HTTP status `u16`.
-fn status_to_u16(status: StatusCode) -> u16 {
-    match status {
-        StatusCode::Ok => 200,
-        StatusCode::Created => 201,
-        StatusCode::MovedPermanently => 301,
-        StatusCode::TemporaryRedirect => 307,
-        StatusCode::MalformedRequest => 400,
-        StatusCode::Unauthorized => 401,
-        StatusCode::Forbidden => 403,
-        StatusCode::NotFound => 404,
-        StatusCode::MethodNotAllowed => 405,
-        StatusCode::RequestTimeout => 408,
-        StatusCode::Conflict => 409,
-        StatusCode::PayloadTooLarge => 413,
-        StatusCode::RateLimitExceeded => 429,
-        StatusCode::InternalError => 500,
-        StatusCode::NotImplemented => 501,
-        StatusCode::ServiceUnavailable => 503,
-        StatusCode::GatewayTimeout => 504,
-        StatusCode::Http(s) => s.as_u16(),
-        _ => 0,
-    }
-}
 
 /// Build a multipart/form-data body as raw bytes.
 ///

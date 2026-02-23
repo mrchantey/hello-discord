@@ -17,8 +17,25 @@ use serde::{Deserialize, Serialize};
 pub struct Snowflake(String);
 
 impl Snowflake {
+    /// Create a new `Snowflake` from any string-like value.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl From<&str> for Snowflake {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl From<String> for Snowflake {
+    fn from(s: String) -> Self {
+        Self(s)
     }
 }
 
