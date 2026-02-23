@@ -362,7 +362,7 @@ fn parse_to_unix_secs_and_micros(input: &str) -> Option<(i64, u32)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Timestamp, TimestampParseError};
+    use super::Timestamp;
     use std::str::FromStr;
 
     #[test]
