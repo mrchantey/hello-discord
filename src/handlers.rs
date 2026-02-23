@@ -20,90 +20,34 @@ use crate::types::*;
 
 /// Returns the list of slash commands to register with Discord.
 pub fn slash_commands() -> Vec<ApplicationCommand> {
+    use crate::types::application::command::CommandOptionType;
+
     vec![
-        ApplicationCommand {
-            id: None,
-            name: "ping".to_string(),
-            description: "Check bot latency".to_string(),
-            options: Vec::new(),
-            kind: 1,
-        },
-        ApplicationCommand {
-            id: None,
-            name: "uptime".to_string(),
-            description: "See how long the bot has been running".to_string(),
-            options: Vec::new(),
-            kind: 1,
-        },
-        ApplicationCommand {
-            id: None,
-            name: "roll".to_string(),
-            description: "Roll a dice".to_string(),
-            options: vec![ApplicationCommandOption {
-                name: "sides".to_string(),
-                description: "Number of sides (default: 6)".to_string(),
-                kind: 4, // INTEGER
-                required: false,
-                choices: Vec::new(),
-            }],
-            kind: 1,
-        },
-        ApplicationCommand {
-            id: None,
-            name: "serverinfo".to_string(),
-            description: "Show server information".to_string(),
-            options: Vec::new(),
-            kind: 1,
-        },
-        ApplicationCommand {
-            id: None,
-            name: "whoami".to_string(),
-            description: "Show info about yourself".to_string(),
-            options: Vec::new(),
-            kind: 1,
-        },
-        ApplicationCommand {
-            id: None,
-            name: "count".to_string(),
-            description: "Count messages in this channel".to_string(),
-            options: Vec::new(),
-            kind: 1,
-        },
-        ApplicationCommand {
-            id: None,
-            name: "first".to_string(),
-            description: "Show the first message ever sent in this channel".to_string(),
-            options: Vec::new(),
-            kind: 1,
-        },
-        ApplicationCommand {
-            id: None,
-            name: "help".to_string(),
-            description: "Show available commands".to_string(),
-            options: Vec::new(),
-            kind: 1,
-        },
-        ApplicationCommand {
-            id: None,
-            name: "report".to_string(),
-            description: "Submit a report via a pop-up form".to_string(),
-            options: Vec::new(),
-            kind: 1,
-        },
-        ApplicationCommand {
-            id: None,
-            name: "send-logo".to_string(),
-            description: "Send the bot logo".to_string(),
-            options: Vec::new(),
-            kind: 1,
-        },
-        ApplicationCommand {
-            id: None,
-            name: "demo-select".to_string(),
-            description: "Demo the select menu component".to_string(),
-            options: Vec::new(),
-            kind: 1,
-        },
+        ApplicationCommandBuilder::chat_input("ping", "Check bot latency").build(),
+        ApplicationCommandBuilder::chat_input("uptime", "See how long the bot has been running")
+            .build(),
+        ApplicationCommandBuilder::chat_input("roll", "Roll a dice")
+            .simple_option(
+                CommandOptionType::Integer,
+                "sides",
+                "Number of sides (default: 6)",
+                false,
+            )
+            .build(),
+        ApplicationCommandBuilder::chat_input("serverinfo", "Show server information").build(),
+        ApplicationCommandBuilder::chat_input("whoami", "Show info about yourself").build(),
+        ApplicationCommandBuilder::chat_input("count", "Count messages in this channel").build(),
+        ApplicationCommandBuilder::chat_input(
+            "first",
+            "Show the first message ever sent in this channel",
+        )
+        .build(),
+        ApplicationCommandBuilder::chat_input("help", "Show available commands").build(),
+        ApplicationCommandBuilder::chat_input("report", "Submit a report via a pop-up form")
+            .build(),
+        ApplicationCommandBuilder::chat_input("send-logo", "Send the bot logo").build(),
+        ApplicationCommandBuilder::chat_input("demo-select", "Demo the select menu component")
+            .build(),
     ]
 }
 
@@ -118,22 +62,21 @@ pub fn slash_commands() -> Vec<ApplicationCommand> {
 pub async fn on_ready(world: &AsyncWorld, http: &DiscordHttpClient, ready: ReadyEvent) {
     info!(user = %ready.user.tag(), guilds = ready.guilds.len(), "bot is ready!");
 
-    let bot_user_id = ready.user.id.as_str().to_string();
-    let app_id = ready.application.id.as_str().to_string();
+    let bot_user_id = ready.user.id;
+    let app_id = ready.application.id;
 
     // Store identity in BotState, and check whether commands are already registered.
-    let app_id_for_closure = app_id.clone();
     let already_registered = world
         .with_resource_then::<BotState, _>(move |mut state| {
             state.bot_user_id = Some(bot_user_id);
-            state.application_id = Some(app_id_for_closure);
+            state.application_id = Some(app_id);
             state.commands_registered
         })
         .await;
 
     if !already_registered {
         let cmds = slash_commands();
-        match http.bulk_overwrite_global_commands(&app_id, &cmds).await {
+        match http.bulk_overwrite_global_commands(app_id, &cmds).await {
             Ok(registered) => {
                 info!(count = registered.len(), "registered global slash commands");
                 world.with_resource::<BotState>(|mut state| {
@@ -166,7 +109,7 @@ pub async fn on_guild_create(world: &AsyncWorld, guild: Guild) {
             .iter()
             .find(|c| c.kind == ChannelType::GuildText)
         {
-            let channel_id = ch.id.as_str().to_string();
+            let channel_id = ch.id;
             let channel_name = ch.name.clone().unwrap_or_else(|| "?".to_string());
             world.with_resource::<GreetState>(move |mut state| {
                 info!(
@@ -198,17 +141,11 @@ pub async fn on_presence_update(
         return;
     }
 
-    let user_id = presence.user.id.as_str().to_string();
-    if user_id.is_empty() {
-        return;
-    }
+    let user_id = presence.user.id;
 
     // Check whether this is the bot itself and whether we've already greeted.
     let is_self = world
-        .with_resource_then::<BotState, _>({
-            let uid = user_id.clone();
-            move |state| state.bot_user_id.as_deref() == Some(&uid)
-        })
+        .with_resource_then::<BotState, _>(move |state| state.bot_user_id == Some(user_id))
         .await;
 
     if is_self {
@@ -217,12 +154,9 @@ pub async fn on_presence_update(
 
     // Now check GreetState (separate resource access to keep borrows clean).
     let (already_greeted, greet_channel) = world
-        .with_resource_then::<GreetState, _>({
-            let uid = user_id.clone();
-            move |state| {
-                let already = state.greeted_users.contains(&uid);
-                (already, state.greet_channel_id.clone())
-            }
+        .with_resource_then::<GreetState, _>(move |state| {
+            let already = state.greeted_users.contains(&user_id);
+            (already, state.greet_channel_id)
         })
         .await;
 
@@ -231,11 +165,8 @@ pub async fn on_presence_update(
     }
 
     // Mark as greeted.
-    world.with_resource::<GreetState>({
-        let uid = user_id.clone();
-        move |mut state| {
-            state.greeted_users.insert(uid);
-        }
+    world.with_resource::<GreetState>(move |mut state| {
+        state.greeted_users.insert(user_id);
     });
 
     if let Some(ch_id) = greet_channel {
@@ -243,7 +174,7 @@ pub async fn on_presence_update(
             "Welcome online, <@{}>! 🎉 Hope you're having a great day!",
             user_id
         );
-        if let Err(e) = http.send_message(&ch_id, &greeting).await {
+        if let Err(e) = http.send_message(ch_id, &greeting).await {
             warn!(error = %e, "failed to send greeting");
         }
     }
@@ -266,25 +197,22 @@ pub async fn on_message(world: &AsyncWorld, http: &DiscordHttpClient, msg: Messa
     );
 
     // Update greet channel if not yet set.
-    world.with_resource::<GreetState>({
-        let cid = msg.channel_id.as_str().to_string();
-        move |mut state| {
-            if state.greet_channel_id.is_none() {
-                state.greet_channel_id = Some(cid);
-            }
+    let channel_id = msg.channel_id;
+    world.with_resource::<GreetState>(move |mut state| {
+        if state.greet_channel_id.is_none() {
+            state.greet_channel_id = Some(channel_id);
         }
     });
 
-    let channel_id = msg.channel_id.as_str();
     let content = msg.content.trim();
 
     // Read bot_user_id + start_time from BotState.
     let (bot_user_id, start_time) = world
-        .with_resource_then::<BotState, _>(|state| (state.bot_user_id.clone(), state.start_time))
+        .with_resource_then::<BotState, _>(|state| (state.bot_user_id, state.start_time))
         .await;
 
     // Determine effective command text from @mention or ! prefix.
-    let effective_content = if let Some(ref bid) = bot_user_id {
+    let effective_content = if let Some(bid) = bot_user_id {
         let mention_tag = format!("<@{}>", bid);
         let mention_tag_nick = format!("<@!{}>", bid);
         if content.starts_with(&mention_tag) {
@@ -328,7 +256,7 @@ pub async fn on_message(world: &AsyncWorld, http: &DiscordHttpClient, msg: Messa
     let command = parts[0];
     let args = parts.get(1).copied().unwrap_or("");
 
-    let reply = |text: String| CreateMessage::new().content(text).reply_to(msg.id.as_str());
+    let reply = |text: String| CreateMessage::new().content(text).reply_to(msg.id);
 
     match command {
         "!hello" => {
@@ -403,16 +331,15 @@ pub async fn on_message(world: &AsyncWorld, http: &DiscordHttpClient, msg: Messa
         "!first" => {
             let text = match http.get_first_message(channel_id).await {
                 Ok(first_msg) => {
-                    let ts = if let Ok(dt) =
-                        chrono::DateTime::parse_from_rfc3339(&first_msg.timestamp)
-                    {
+                    let ts_str = first_msg.timestamp.as_str();
+                    let ts = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts_str) {
                         dt.format("%B %d, %Y at %H:%M UTC").to_string()
                     } else {
-                        first_msg.timestamp.clone()
+                        ts_str.to_string()
                     };
                     format!(
                         "📜 **First message in this channel:**\n> {}\n— *{}* on {}",
-                        first_msg.content, first_msg.author.username, ts
+                        first_msg.content, first_msg.author.name, ts
                     )
                 }
                 Err(e) => format!("❌ Error fetching first message: {}", e),
@@ -424,8 +351,8 @@ pub async fn on_message(world: &AsyncWorld, http: &DiscordHttpClient, msg: Messa
         }
 
         "!serverinfo" => {
-            let text = if let Some(ref guild_id) = msg.guild_id {
-                match http.get_guild(guild_id.as_str()).await {
+            let text = if let Some(guild_id) = msg.guild_id {
+                match http.get_guild(guild_id).await {
                     Ok(guild) => format_guild_info(&guild),
                     Err(e) => format!("❌ Error fetching server info: {}", e),
                 }
@@ -488,7 +415,7 @@ pub async fn on_interaction(
                 kind: InteractionCallbackType::Pong,
                 data: None,
             };
-            http.create_interaction_response(interaction.id.as_str(), &interaction.token, &resp)
+            http.create_interaction_response(interaction.id, &interaction.token, &resp)
                 .await?;
             Ok(())
         }
@@ -500,16 +427,35 @@ pub async fn on_interaction(
 // Slash command handler
 // ---------------------------------------------------------------------------
 
+/// Extract command data from an interaction.
+///
+/// Twilight models `InteractionData` as an enum; slash commands carry the
+/// `ApplicationCommand` variant. This helper pulls out the name and options.
+fn command_info(interaction: &Interaction) -> Option<(&str, &[CommandDataOption])> {
+    match interaction.data.as_ref()? {
+        InteractionData::ApplicationCommand(data) => Some((&data.name, &data.options)),
+        _ => None,
+    }
+}
+
+/// Extract a u64 option value from a list of command data options.
+fn get_option_u64(options: &[CommandDataOption], name: &str) -> Option<u64> {
+    options
+        .iter()
+        .find(|o| o.name == name)
+        .and_then(|o| match &o.value {
+            CommandOptionValue::Integer(v) => Some(*v as u64),
+            CommandOptionValue::Number(v) => Some(*v as u64),
+            _ => None,
+        })
+}
+
 async fn handle_slash_command(
     world: &AsyncWorld,
     http: &DiscordHttpClient,
     interaction: &Interaction,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let data = interaction
-        .data
-        .as_ref()
-        .ok_or("missing interaction data")?;
-    let name = data.name.as_deref().unwrap_or("");
+    let (name, options) = command_info(interaction).ok_or("missing interaction data")?;
 
     let start_time = world
         .with_resource_then::<BotState, _>(|state| state.start_time)
@@ -530,13 +476,7 @@ async fn handle_slash_command(
         }
 
         "roll" => {
-            let sides = data
-                .options
-                .iter()
-                .find(|o| o.name == "sides")
-                .and_then(|o| o.value.as_ref())
-                .and_then(|v| v.as_u64())
-                .unwrap_or(6) as u32;
+            let sides = get_option_u64(options, "sides").unwrap_or(6) as u32;
             let sides = sides.max(2).min(1000);
             let result = (rand::random::<u32>() % sides) + 1;
             let text = format!("🎲 Rolling a d{}... **{}**!", sides, result);
@@ -556,9 +496,8 @@ async fn handle_slash_command(
         }
 
         "serverinfo" => {
-            let text = if let Some(ref guild_id) = interaction.guild_id {
-                let gid = guild_id.as_str().to_string();
-                match http.get_guild(&gid).await {
+            let text = if let Some(guild_id) = interaction.guild_id {
+                match http.get_guild(guild_id).await {
                     Ok(guild) => format_guild_info(&guild),
                     Err(e) => format!("❌ Error: {}", e),
                 }
@@ -577,8 +516,9 @@ async fn handle_slash_command(
         }
 
         "count" => {
-            let text = if let Some(ref ch_id) = interaction.channel_id {
-                match http.count_messages(ch_id.as_str()).await {
+            #[allow(deprecated)]
+            let text = if let Some(ch_id) = interaction.channel_id {
+                match http.count_messages(ch_id).await {
                     Ok(count) => {
                         format!("📊 This channel has approximately **{}** messages.", count)
                     }
@@ -591,19 +531,19 @@ async fn handle_slash_command(
         }
 
         "first" => {
-            let text = if let Some(ref ch_id) = interaction.channel_id {
-                match http.get_first_message(ch_id.as_str()).await {
+            #[allow(deprecated)]
+            let text = if let Some(ch_id) = interaction.channel_id {
+                match http.get_first_message(ch_id).await {
                     Ok(first_msg) => {
-                        let ts = if let Ok(dt) =
-                            chrono::DateTime::parse_from_rfc3339(&first_msg.timestamp)
-                        {
+                        let ts_str = first_msg.timestamp.as_str();
+                        let ts = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts_str) {
                             dt.format("%B %d, %Y at %H:%M UTC").to_string()
                         } else {
-                            first_msg.timestamp.clone()
+                            ts_str.to_string()
                         };
                         format!(
                             "📜 **First message in this channel:**\n> {}\n— *{}* on {}",
-                            first_msg.content, first_msg.author.username, ts
+                            first_msg.content, first_msg.author.name, ts
                         )
                     }
                     Err(e) => format!("❌ Error: {}", e),
@@ -635,15 +575,16 @@ async fn handle_slash_command(
                 kind: InteractionCallbackType::DeferredChannelMessageWithSource,
                 data: None,
             };
-            http.create_interaction_response(interaction.id.as_str(), &interaction.token, &ack)
+            http.create_interaction_response(interaction.id, &interaction.token, &ack)
                 .await?;
 
-            if let Some(ref ch_id) = interaction.channel_id {
+            #[allow(deprecated)]
+            if let Some(ch_id) = interaction.channel_id {
                 match std::fs::read("./logo-square.png") {
                     Ok(file_content) => {
                         if let Err(e) = http
                             .send_message_with_file(
-                                ch_id.as_str(),
+                                ch_id,
                                 Some("Here's our logo! 🎨"),
                                 "logo-square.png",
                                 file_content,
@@ -652,20 +593,14 @@ async fn handle_slash_command(
                         {
                             warn!(error = %e, "failed to send logo file");
                             let _ = http
-                                .send_message(
-                                    ch_id.as_str(),
-                                    &format!("❌ Failed to send logo: {}", e),
-                                )
+                                .send_message(ch_id, &format!("❌ Failed to send logo: {}", e))
                                 .await;
                         }
                     }
                     Err(e) => {
                         warn!(error = %e, "failed to read logo file");
                         let _ = http
-                            .send_message(
-                                ch_id.as_str(),
-                                &format!("❌ Failed to read logo file: {}", e),
-                            )
+                            .send_message(ch_id, &format!("❌ Failed to read logo file: {}", e))
                             .await;
                     }
                 }
@@ -682,33 +617,33 @@ async fn handle_slash_command(
                     "language_select",
                     "Choose a language...",
                     vec![
-                        SelectOption {
-                            label: "Rust".to_string(),
-                            value: "rust".to_string(),
+                        SelectMenuOption {
+                            default: false,
                             description: Some("Fast, safe, and concurrent".to_string()),
                             emoji: None,
-                            default: false,
+                            label: "Rust".to_string(),
+                            value: "rust".to_string(),
                         },
-                        SelectOption {
-                            label: "Python".to_string(),
-                            value: "python".to_string(),
+                        SelectMenuOption {
+                            default: false,
                             description: Some("Simple and versatile".to_string()),
                             emoji: None,
-                            default: false,
+                            label: "Python".to_string(),
+                            value: "python".to_string(),
                         },
-                        SelectOption {
-                            label: "TypeScript".to_string(),
-                            value: "typescript".to_string(),
+                        SelectMenuOption {
+                            default: false,
                             description: Some("Typed JavaScript".to_string()),
                             emoji: None,
-                            default: false,
+                            label: "TypeScript".to_string(),
+                            value: "typescript".to_string(),
                         },
-                        SelectOption {
-                            label: "Go".to_string(),
-                            value: "go".to_string(),
+                        SelectMenuOption {
+                            default: false,
                             description: Some("Simple and efficient".to_string()),
                             emoji: None,
-                            default: false,
+                            label: "Go".to_string(),
+                            value: "go".to_string(),
                         },
                     ],
                 )])]),
@@ -722,7 +657,7 @@ async fn handle_slash_command(
         }
     };
 
-    http.create_interaction_response(interaction.id.as_str(), &interaction.token, &response)
+    http.create_interaction_response(interaction.id, &interaction.token, &response)
         .await?;
     Ok(())
 }
@@ -731,15 +666,19 @@ async fn handle_slash_command(
 // Component interaction handler
 // ---------------------------------------------------------------------------
 
+/// Extract component data from an interaction.
+fn component_info(interaction: &Interaction) -> Option<(&str, &[String])> {
+    match interaction.data.as_ref()? {
+        InteractionData::MessageComponent(data) => Some((&data.custom_id, &data.values)),
+        _ => None,
+    }
+}
+
 async fn handle_component(
     http: &DiscordHttpClient,
     interaction: &Interaction,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let data = interaction
-        .data
-        .as_ref()
-        .ok_or("missing interaction data")?;
-    let custom_id = data.custom_id.as_deref().unwrap_or("");
+    let (custom_id, values) = component_info(interaction).ok_or("missing interaction data")?;
 
     if custom_id.starts_with("reroll:") {
         let sides: u32 = custom_id
@@ -765,10 +704,10 @@ async fn handle_component(
             }),
         };
 
-        http.create_interaction_response(interaction.id.as_str(), &interaction.token, &response)
+        http.create_interaction_response(interaction.id, &interaction.token, &response)
             .await?;
-    } else if !data.values.is_empty() {
-        let selected = data.values.join(", ");
+    } else if !values.is_empty() {
+        let selected = values.join(", ");
         let text = format!("You selected: **{}**", selected);
         let response = InteractionResponse {
             kind: InteractionCallbackType::ChannelMessageWithSource,
@@ -778,7 +717,7 @@ async fn handle_component(
                 ..Default::default()
             }),
         };
-        http.create_interaction_response(interaction.id.as_str(), &interaction.token, &response)
+        http.create_interaction_response(interaction.id, &interaction.token, &response)
             .await?;
     } else {
         info!(custom_id, "unhandled component interaction");
@@ -791,31 +730,46 @@ async fn handle_component(
 // Modal submit handler
 // ---------------------------------------------------------------------------
 
+/// Extract text input values from a modal submit interaction.
+fn modal_text_inputs(interaction: &Interaction) -> Option<(String, Vec<(String, String)>)> {
+    use crate::types::application::interaction::modal::ModalInteractionComponent;
+
+    match interaction.data.as_ref()? {
+        InteractionData::ModalSubmit(data) => {
+            let custom_id = data.custom_id.clone();
+            let mut inputs = Vec::new();
+            for row in &data.components {
+                // Each top-level component in a modal is an ActionRow
+                if let ModalInteractionComponent::ActionRow(action_row) = row {
+                    for component in &action_row.components {
+                        if let ModalInteractionComponent::TextInput(ti) = component {
+                            inputs.push((ti.custom_id.clone(), ti.value.clone()));
+                        }
+                    }
+                }
+            }
+            Some((custom_id, inputs))
+        }
+        _ => None,
+    }
+}
+
 async fn handle_modal_submit(
     http: &DiscordHttpClient,
     interaction: &Interaction,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let data = interaction
-        .data
-        .as_ref()
-        .ok_or("missing interaction data")?;
-    let custom_id = data.custom_id.as_deref().unwrap_or("");
+    let (custom_id, text_inputs) =
+        modal_text_inputs(interaction).ok_or("missing interaction data")?;
 
     if custom_id == "report_modal" {
         let mut subject = String::new();
         let mut body = String::new();
 
-        for row in &data.components {
-            for component in &row.components {
-                match component.custom_id.as_deref() {
-                    Some("report_subject") => {
-                        subject = component.value.clone().unwrap_or_default();
-                    }
-                    Some("report_body") => {
-                        body = component.value.clone().unwrap_or_default();
-                    }
-                    _ => {}
-                }
+        for (id, value) in &text_inputs {
+            match id.as_str() {
+                "report_subject" => subject = value.clone(),
+                "report_body" => body = value.clone(),
+                _ => {}
             }
         }
 
@@ -824,12 +778,13 @@ async fn handle_modal_submit(
             .map(|u| u.tag())
             .unwrap_or_else(|| "Unknown".to_string());
 
-        let embed = Embed::new()
+        let embed = EmbedBuilder::new()
             .title(format!("📝 Report: {}", subject))
             .description(&body)
             .color(0xFF6600)
             .footer(format!("Submitted by {}", author_name))
-            .timestamp(chrono::Utc::now().to_rfc3339());
+            .timestamp(chrono::Utc::now().to_rfc3339())
+            .build();
 
         let response = InteractionResponse {
             kind: InteractionCallbackType::ChannelMessageWithSource,
@@ -840,7 +795,7 @@ async fn handle_modal_submit(
             }),
         };
 
-        http.create_interaction_response(interaction.id.as_str(), &interaction.token, &response)
+        http.create_interaction_response(interaction.id, &interaction.token, &response)
             .await?;
     }
 
@@ -875,11 +830,7 @@ fn format_guild_info(guild: &Guild) -> String {
         .approximate_presence_count
         .map(|n| n.to_string())
         .unwrap_or_else(|| "unknown".to_string());
-    let owner_id = guild
-        .owner_id
-        .as_ref()
-        .map(|s| s.as_str())
-        .unwrap_or("unknown");
+    let owner_str = guild.owner_id.to_string();
     let created_at = guild
         .created_at_ms()
         .and_then(|ms| chrono::DateTime::from_timestamp_millis(ms as i64))
@@ -891,7 +842,7 @@ fn format_guild_info(guild: &Guild) -> String {
          • **Members:** {} ({} online)\n\
          • **Owner:** <@{}>\n\
          • **Created:** {}",
-        guild.name, member_count, online_count, owner_id, created_at
+        guild.name, member_count, online_count, owner_str, created_at
     )
 }
 
@@ -973,8 +924,11 @@ mod tests {
         let roll = cmds.iter().find(|c| c.name == "roll").expect("no /roll");
         assert_eq!(roll.options.len(), 1);
         assert_eq!(roll.options[0].name, "sides");
-        assert_eq!(roll.options[0].kind, 4); // INTEGER
-        assert!(!roll.options[0].required);
+        assert!(matches!(
+            roll.options[0].kind,
+            crate::types::application::command::CommandOptionType::Integer
+        ));
+        assert_eq!(roll.options[0].required, Some(false));
     }
 
     // -- text_response() ---------------------------------------------------
@@ -1010,16 +964,30 @@ mod tests {
 
     #[test]
     fn format_guild_info_includes_guild_name() {
-        let guild = Guild {
-            id: Snowflake::new("123"),
-            name: "Test Server".into(),
-            icon: None,
-            owner_id: Some(Snowflake::new("456")),
-            approximate_member_count: Some(42),
-            approximate_presence_count: Some(10),
-            channels: Vec::new(),
-            members: Vec::new(),
-        };
+        let guild: Guild = serde_json::from_value(serde_json::json!({
+            "id": "123",
+            "name": "Test Server",
+            "icon": null,
+            "owner_id": "456",
+            "approximate_member_count": 42,
+            "approximate_presence_count": 10,
+            "channels": [],
+            "members": [],
+            "roles": [],
+            "emojis": [],
+            "features": [],
+            "afk_timeout": 300,
+            "preferred_locale": "en-US",
+            "premium_progress_bar_enabled": false,
+            "verification_level": 0,
+            "default_message_notifications": 0,
+            "explicit_content_filter": 0,
+            "mfa_level": 0,
+            "premium_tier": 0,
+            "nsfw_level": 0,
+            "system_channel_flags": 0,
+        }))
+        .expect("valid guild JSON");
         let text = format_guild_info(&guild);
         assert!(text.contains("Test Server"), "missing guild name");
         assert!(text.contains("42"), "missing member count");
@@ -1029,16 +997,28 @@ mod tests {
 
     #[test]
     fn format_guild_info_handles_missing_counts() {
-        let guild = Guild {
-            id: Snowflake::new("1"),
-            name: "Empty".into(),
-            icon: None,
-            owner_id: None,
-            approximate_member_count: None,
-            approximate_presence_count: None,
-            channels: Vec::new(),
-            members: Vec::new(),
-        };
+        let guild: Guild = serde_json::from_value(serde_json::json!({
+            "id": "1",
+            "name": "Empty",
+            "icon": null,
+            "owner_id": "1",
+            "channels": [],
+            "members": [],
+            "roles": [],
+            "emojis": [],
+            "features": [],
+            "afk_timeout": 300,
+            "preferred_locale": "en-US",
+            "premium_progress_bar_enabled": false,
+            "verification_level": 0,
+            "default_message_notifications": 0,
+            "explicit_content_filter": 0,
+            "mfa_level": 0,
+            "premium_tier": 0,
+            "nsfw_level": 0,
+            "system_channel_flags": 0,
+        }))
+        .expect("valid guild JSON");
         let text = format_guild_info(&guild);
         assert!(
             text.contains("unknown"),
@@ -1050,14 +1030,15 @@ mod tests {
 
     #[test]
     fn format_whoami_includes_username_and_id() {
-        let user = User {
-            id: Snowflake::new("789"),
-            username: "alice".into(),
-            discriminator: Some("0001".into()),
-            avatar: None,
-            bot: false,
-            global_name: None,
-        };
+        let user: User = serde_json::from_value(serde_json::json!({
+            "id": "789",
+            "username": "alice",
+            "discriminator": "0001",
+            "avatar": null,
+            "bot": false,
+            "global_name": null,
+        }))
+        .expect("valid user JSON");
         let text = format_whoami(&user);
         assert!(text.contains("alice"), "missing username");
         assert!(text.contains("789"), "missing user id");

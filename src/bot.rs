@@ -12,6 +12,7 @@ use crate::events::GatewayEvent;
 use crate::gateway::{self, GatewayConfig};
 use crate::handlers;
 use crate::http::DiscordHttpClient;
+use crate::types::{ApplicationMarker, ChannelMarker, Id, UserMarker};
 
 // ---------------------------------------------------------------------------
 // Resources
@@ -21,9 +22,9 @@ use crate::http::DiscordHttpClient;
 #[derive(Resource)]
 pub struct BotState {
     /// The bot's own user ID (set on READY).
-    pub bot_user_id: Option<String>,
+    pub bot_user_id: Option<Id<UserMarker>>,
     /// The application ID (set on READY).
-    pub application_id: Option<String>,
+    pub application_id: Option<Id<ApplicationMarker>>,
     /// Whether slash commands have been registered this session.
     pub commands_registered: bool,
     /// Timestamp of when the bot started.
@@ -45,9 +46,9 @@ impl Default for BotState {
 #[derive(Resource, Default)]
 pub struct GreetState {
     /// Channel to send greeting messages in.
-    pub greet_channel_id: Option<String>,
+    pub greet_channel_id: Option<Id<ChannelMarker>>,
     /// Users we've already greeted this session (to avoid spamming).
-    pub greeted_users: HashSet<String>,
+    pub greeted_users: HashSet<Id<UserMarker>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -182,10 +183,10 @@ mod tests {
     #[test]
     fn bot_state_tracks_identity() {
         let mut state = BotState::default();
-        state.bot_user_id = Some("12345".to_string());
-        state.application_id = Some("67890".to_string());
-        assert_eq!(state.bot_user_id.as_deref(), Some("12345"));
-        assert_eq!(state.application_id.as_deref(), Some("67890"));
+        state.bot_user_id = Some(Id::new(12345));
+        state.application_id = Some(Id::new(67890));
+        assert_eq!(state.bot_user_id.map(|id| id.get()), Some(12345));
+        assert_eq!(state.application_id.map(|id| id.get()), Some(67890));
     }
 
     #[test]
@@ -208,26 +209,30 @@ mod tests {
     #[test]
     fn greet_state_tracks_greeted_users() {
         let mut state = GreetState::default();
-        assert!(!state.greeted_users.contains("user_a"));
-        state.greeted_users.insert("user_a".to_string());
-        assert!(state.greeted_users.contains("user_a"));
-        assert!(!state.greeted_users.contains("user_b"));
+        let user_a: Id<UserMarker> = Id::new(111);
+        let user_b: Id<UserMarker> = Id::new(222);
+        assert!(!state.greeted_users.contains(&user_a));
+        state.greeted_users.insert(user_a);
+        assert!(state.greeted_users.contains(&user_a));
+        assert!(!state.greeted_users.contains(&user_b));
     }
 
     #[test]
     fn greet_state_no_duplicate_greetings() {
         let mut state = GreetState::default();
-        assert!(state.greeted_users.insert("user_a".to_string()));
+        let user_a: Id<UserMarker> = Id::new(111);
+        assert!(state.greeted_users.insert(user_a));
         // Second insert returns false — user already present.
-        assert!(!state.greeted_users.insert("user_a".to_string()));
+        assert!(!state.greeted_users.insert(user_a));
         assert_eq!(state.greeted_users.len(), 1);
     }
 
     #[test]
     fn greet_state_channel_id_can_be_set() {
         let mut state = GreetState::default();
-        state.greet_channel_id = Some("chan_123".to_string());
-        assert_eq!(state.greet_channel_id.as_deref(), Some("chan_123"));
+        let chan: Id<ChannelMarker> = Id::new(123);
+        state.greet_channel_id = Some(chan);
+        assert_eq!(state.greet_channel_id.map(|id| id.get()), Some(123));
     }
 
     // -- gateway_intents() -------------------------------------------------

@@ -15,6 +15,8 @@ use tracing::{debug, warn};
 use beet::core::prelude::{HttpMethod, Request, ResponseParts, StatusCode};
 use beet::net::prelude::RequestClientExt;
 
+use crate::types::id::marker::{ApplicationMarker, ChannelMarker, GuildMarker, InteractionMarker};
+use crate::types::id::Id;
 use crate::types::*;
 use serde_json::json;
 
@@ -337,7 +339,7 @@ impl DiscordHttpClient {
     /// Send a simple text message to a channel.
     pub async fn send_message(
         &self,
-        channel_id: &str,
+        channel_id: Id<ChannelMarker>,
         content: &str,
     ) -> Result<Message, HttpError> {
         let msg = CreateMessage::new().content(content);
@@ -347,7 +349,7 @@ impl DiscordHttpClient {
     /// Send a rich message (embeds, components, reply, etc.) to a channel.
     pub async fn create_message(
         &self,
-        channel_id: &str,
+        channel_id: Id<ChannelMarker>,
         msg: &CreateMessage,
     ) -> Result<Message, HttpError> {
         let path = format!("channels/{}/messages", channel_id);
@@ -360,7 +362,7 @@ impl DiscordHttpClient {
     /// Send a message with a file attachment to a channel.
     pub async fn send_message_with_file(
         &self,
-        channel_id: &str,
+        channel_id: Id<ChannelMarker>,
         content: Option<&str>,
         filename: &str,
         file_content: Vec<u8>,
@@ -430,7 +432,7 @@ impl DiscordHttpClient {
     /// (e.g. `limit=100&before=1234`).
     pub async fn get_messages(
         &self,
-        channel_id: &str,
+        channel_id: Id<ChannelMarker>,
         query: &str,
     ) -> Result<Vec<Message>, HttpError> {
         let path = format!("channels/{}/messages?{}", channel_id, query);
@@ -444,7 +446,7 @@ impl DiscordHttpClient {
     // ------------------------------------------------------------------
 
     /// Get guild info (with approximate member counts).
-    pub async fn get_guild(&self, guild_id: &str) -> Result<Guild, HttpError> {
+    pub async fn get_guild(&self, guild_id: Id<GuildMarker>) -> Result<Guild, HttpError> {
         let path = format!("guilds/{}?with_counts=true", guild_id);
         let route_key = format!("GET /guilds/{}", guild_id);
         self.request_json(HttpMethod::Get, &path, &route_key, None)
@@ -458,7 +460,7 @@ impl DiscordHttpClient {
     /// Respond to an interaction (initial response).
     pub async fn create_interaction_response(
         &self,
-        interaction_id: &str,
+        interaction_id: Id<InteractionMarker>,
         interaction_token: &str,
         response: &InteractionResponse,
     ) -> Result<(), HttpError> {
@@ -478,7 +480,7 @@ impl DiscordHttpClient {
     #[allow(dead_code)]
     pub async fn edit_original_interaction_response(
         &self,
-        application_id: &str,
+        application_id: Id<ApplicationMarker>,
         interaction_token: &str,
         body: &serde_json::Value,
     ) -> Result<Message, HttpError> {
@@ -499,8 +501,8 @@ impl DiscordHttpClient {
     #[allow(unused)]
     pub async fn bulk_overwrite_guild_commands(
         &self,
-        application_id: &str,
-        guild_id: &str,
+        application_id: Id<ApplicationMarker>,
+        guild_id: Id<GuildMarker>,
         commands: &[ApplicationCommand],
     ) -> Result<Vec<ApplicationCommand>, HttpError> {
         let path = format!(
@@ -519,7 +521,7 @@ impl DiscordHttpClient {
     /// Register (or overwrite) global application commands.
     pub async fn bulk_overwrite_global_commands(
         &self,
-        application_id: &str,
+        application_id: Id<ApplicationMarker>,
         commands: &[ApplicationCommand],
     ) -> Result<Vec<ApplicationCommand>, HttpError> {
         let path = format!("applications/{}/commands", application_id);
@@ -535,7 +537,7 @@ impl DiscordHttpClient {
 
     /// Get channel information.
     #[allow(dead_code)]
-    pub async fn get_channel(&self, channel_id: &str) -> Result<Channel, HttpError> {
+    pub async fn get_channel(&self, channel_id: Id<ChannelMarker>) -> Result<Channel, HttpError> {
         let path = format!("channels/{}", channel_id);
         let route_key = format!("GET /channels/{}", channel_id);
         self.request_json(HttpMethod::Get, &path, &route_key, None)
@@ -547,7 +549,7 @@ impl DiscordHttpClient {
     // ------------------------------------------------------------------
 
     /// Count messages in a channel by paginating backwards. Caps at 10 000.
-    pub async fn count_messages(&self, channel_id: &str) -> Result<usize, HttpError> {
+    pub async fn count_messages(&self, channel_id: Id<ChannelMarker>) -> Result<usize, HttpError> {
         let mut count = 0usize;
         let mut before: Option<String> = None;
         let max_pages = 100;
@@ -565,7 +567,7 @@ impl DiscordHttpClient {
             }
 
             count += messages.len();
-            before = messages.last().map(|m| m.id.as_str().to_string());
+            before = messages.last().map(|m| m.id.to_string());
 
             if messages.len() < 100 {
                 break;
@@ -576,7 +578,10 @@ impl DiscordHttpClient {
     }
 
     /// Get the very first message ever sent in a channel.
-    pub async fn get_first_message(&self, channel_id: &str) -> Result<Message, HttpError> {
+    pub async fn get_first_message(
+        &self,
+        channel_id: Id<ChannelMarker>,
+    ) -> Result<Message, HttpError> {
         let messages: Vec<Message> = self.get_messages(channel_id, "after=0&limit=1").await?;
 
         messages.into_iter().next().ok_or_else(|| HttpError::Api {

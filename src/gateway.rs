@@ -528,7 +528,7 @@ async fn read_loop(
                                 sess.resume_gateway_url = Some(ready.resume_gateway_url.clone());
                                 info!(
                                     session_id = %ready.session_id,
-                                    user = %ready.user.username,
+                                    user = %ready.user.name,
                                     "gateway READY"
                                 );
                             }

@@ -11,6 +11,10 @@ path = "src/lib.rs"
 default = ["rustls-tls"]
 native-tls = ["beet/native-tls"]
 rustls-tls = ["beet/rustls-tls"]
+## Enable oauth, poll, voice, and other large twilight-model modules we don't
+## currently use. Without this, only the core types (id, user, channel, guild,
+## application, http, gateway/presence, util) are compiled.
+full-model = []
 
 [dependencies]
 beet = { path = "../beet", features = ["net", "tungstenite", "ureq"] }
@@ -22,6 +26,11 @@ dotenv = "0.15"
 chrono = "0.4"
 rand = "0.8"
 serde_repr = "0.1"
+bitflags = { version = "2", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures-lite = "2"
+
+[dev-dependencies]
+serde_test = "1"
+static_assertions = "1"
