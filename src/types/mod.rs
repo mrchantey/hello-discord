@@ -183,7 +183,7 @@ pub use self::builders::{ApplicationCommandBuilder, EmbedBuilder};
 // ---- Custom types (our additions) -----------------------------------------
 pub use self::custom::{
     CreateMessage, GatewayPayload, PartialUser, PresenceUpdate, RateLimitInfo, ReadyApplication,
-    ReadyEvent,
+    ReadyEvent, UnknownEvent,
 };
 
 // ---- Extension traits (our additions) -------------------------------------

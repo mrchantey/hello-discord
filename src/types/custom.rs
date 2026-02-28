@@ -74,6 +74,14 @@ pub struct PresenceUpdate {
     pub activities: Vec<crate::types::gateway::presence::Activity>,
 }
 
+/// An event we received from the gateway that we don't have a typed variant for.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct UnknownEvent {
+    pub event_name: Option<String>,
+    pub op: u8,
+    pub data: Option<serde_json::Value>,
+}
+
 /// Partial user object received in events like PRESENCE_UPDATE.
 ///
 /// Only the `id` is guaranteed; other fields may be absent.

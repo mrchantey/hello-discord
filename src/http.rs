@@ -7,16 +7,15 @@
 
 use async_lock::Mutex;
 use beet::core::time_ext;
+use beet::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
-use beet::core::prelude::{HttpMethod, Request, ResponseParts, StatusCode};
-use beet::net::prelude::RequestClientExt;
-
 use crate::types::id::marker::{ApplicationMarker, ChannelMarker, GuildMarker, InteractionMarker};
 use crate::types::id::Id;
+use crate::types::Message;
 use crate::types::*;
 use serde_json::json;
 
@@ -115,23 +114,28 @@ impl RateLimiter {
 
 fn parse_rate_limit_headers(parts: &ResponseParts) -> RateLimitInfo {
     let remaining = parts
-        .get_header("x-ratelimit-remaining")
+        .headers
+        .first_raw("x-ratelimit-remaining")
         .and_then(|s: &str| s.parse::<u32>().ok());
 
     let reset_at = parts
-        .get_header("x-ratelimit-reset")
+        .headers
+        .first_raw("x-ratelimit-reset")
         .and_then(|s: &str| s.parse::<f64>().ok());
 
     let reset_after = parts
-        .get_header("x-ratelimit-reset-after")
+        .headers
+        .first_raw("x-ratelimit-reset-after")
         .and_then(|s: &str| s.parse::<f64>().ok());
 
     let bucket = parts
-        .get_header("x-ratelimit-bucket")
+        .headers
+        .first_raw("x-ratelimit-bucket")
         .map(|s: &str| s.to_string());
 
     let is_global = parts
-        .get_header("x-ratelimit-global")
+        .headers
+        .first_raw("x-ratelimit-global")
         .map(|s: &str| s == "true")
         .unwrap_or(false);
 
@@ -152,7 +156,7 @@ fn parse_rate_limit_headers(parts: &ResponseParts) -> RateLimitInfo {
 pub enum HttpError {
     /// Non-success status from Discord.
     Api {
-        status: u16,
+        status: StatusCode,
         body: String,
         route: String,
     },
@@ -208,8 +212,9 @@ impl DiscordHttpClient {
 
     fn build_request(&self, method: HttpMethod, url: &str) -> Request {
         let mut req = Request::new(method, url);
-        req.insert_header("authorization", format!("Bot {}", self.token));
-        req.insert_header("user-agent", USER_AGENT);
+        req.headers
+            .set_raw("authorization", format!("Bot {}", self.token));
+        req.headers.set_raw("user-agent", USER_AGENT);
         req
     }
 
@@ -271,7 +276,7 @@ impl DiscordHttpClient {
                 limiter.update(route_key, &rl_info);
             }
 
-            if status == StatusCode::RateLimitExceeded {
+            if status == StatusCode::TOO_MANY_REQUESTS {
                 let retry_after = rl_info.reset_after.unwrap_or(1.0);
                 let delay = Duration::from_secs_f64(retry_after.min(60.0));
                 warn!(
@@ -304,14 +309,14 @@ impl DiscordHttpClient {
 
             let body_str = String::from_utf8_lossy(&resp_bytes).to_string();
             return Err(HttpError::Api {
-                status: status.into_http(),
+                status,
                 body: body_str,
                 route: route_key.to_string(),
             });
         }
 
         Err(HttpError::Api {
-            status: 429,
+            status: StatusCode::TOO_MANY_REQUESTS,
             body: "rate-limited after max retries".to_string(),
             route: route_key.to_string(),
         })
@@ -392,7 +397,7 @@ impl DiscordHttpClient {
         let content_type = format!("multipart/form-data; boundary={}", boundary);
 
         let mut req = self.build_request(HttpMethod::Post, &url);
-        req.insert_header("content-type", content_type);
+        req.headers.set_raw("content-type", content_type);
         let req = req.with_body(body_bytes);
 
         let resp = req
@@ -421,7 +426,7 @@ impl DiscordHttpClient {
         } else {
             let body_str = String::from_utf8_lossy(&resp_bytes).to_string();
             Err(HttpError::Api {
-                status: status.into_http(),
+                status,
                 body: body_str,
                 route: route_key.to_string(),
             })
@@ -585,7 +590,7 @@ impl DiscordHttpClient {
         let messages: Vec<Message> = self.get_messages(channel_id, "after=0&limit=1").await?;
 
         messages.into_iter().next().ok_or_else(|| HttpError::Api {
-            status: 404,
+            status: StatusCode::NOT_FOUND,
             body: "No messages found in this channel.".to_string(),
             route: format!("GET /channels/{}/messages", channel_id),
         })

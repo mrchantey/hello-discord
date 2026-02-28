@@ -46,13 +46,7 @@ pub enum GatewayEvent {
 
     /// An event we received but don't have a typed variant for yet.
     /// Carries the event name and raw JSON so callers can still inspect it.
-    Unknown {
-        event_name: Option<String>,
-        #[allow(dead_code)]
-        op: u8,
-        #[allow(dead_code)]
-        data: Option<serde_json::Value>,
-    },
+    Unknown(UnknownEvent),
 }
 
 // ---------------------------------------------------------------------------
@@ -88,30 +82,30 @@ impl GatewayEvent {
             11 => GatewayEvent::HeartbeatAck,
 
             // ----- Anything else -----
-            _ => GatewayEvent::Unknown {
+            _ => GatewayEvent::Unknown(UnknownEvent {
                 event_name: payload.t,
                 op: payload.op,
                 data: payload.d,
-            },
+            }),
         }
     }
 
     /// Parse an op-0 DISPATCH event by its `t` name.
     fn parse_dispatch(event_name: Option<&str>, data: Option<serde_json::Value>) -> Self {
         let Some(name) = event_name else {
-            return GatewayEvent::Unknown {
+            return GatewayEvent::Unknown(UnknownEvent {
                 event_name: None,
                 op: 0,
                 data,
-            };
+            });
         };
 
         let Some(d) = data else {
-            return GatewayEvent::Unknown {
+            return GatewayEvent::Unknown(UnknownEvent {
                 event_name: Some(name.to_string()),
                 op: 0,
                 data: None,
-            };
+            });
         };
 
         match name {
@@ -119,11 +113,11 @@ impl GatewayEvent {
                 Ok(ready) => GatewayEvent::Ready(ready),
                 Err(e) => {
                     warn!(event = name, error = %e, "failed to parse READY payload");
-                    GatewayEvent::Unknown {
+                    GatewayEvent::Unknown(UnknownEvent {
                         event_name: Some(name.to_string()),
                         op: 0,
                         data: Some(d),
-                    }
+                    })
                 }
             },
 
@@ -131,11 +125,11 @@ impl GatewayEvent {
                 Ok(guild) => GatewayEvent::GuildCreate(guild),
                 Err(e) => {
                     warn!(event = name, error = %e, "failed to parse GUILD_CREATE payload");
-                    GatewayEvent::Unknown {
+                    GatewayEvent::Unknown(UnknownEvent {
                         event_name: Some(name.to_string()),
                         op: 0,
                         data: Some(d),
-                    }
+                    })
                 }
             },
 
@@ -143,11 +137,11 @@ impl GatewayEvent {
                 Ok(msg) => GatewayEvent::MessageCreate(msg),
                 Err(e) => {
                     warn!(event = name, error = %e, "failed to parse MESSAGE_CREATE payload");
-                    GatewayEvent::Unknown {
+                    GatewayEvent::Unknown(UnknownEvent {
                         event_name: Some(name.to_string()),
                         op: 0,
                         data: Some(d),
-                    }
+                    })
                 }
             },
 
@@ -155,11 +149,11 @@ impl GatewayEvent {
                 Ok(presence) => GatewayEvent::PresenceUpdate(presence),
                 Err(e) => {
                     warn!(event = name, error = %e, "failed to parse PRESENCE_UPDATE payload");
-                    GatewayEvent::Unknown {
+                    GatewayEvent::Unknown(UnknownEvent {
                         event_name: Some(name.to_string()),
                         op: 0,
                         data: Some(d),
-                    }
+                    })
                 }
             },
 
@@ -167,20 +161,20 @@ impl GatewayEvent {
                 Ok(interaction) => GatewayEvent::InteractionCreate(interaction),
                 Err(e) => {
                     warn!(event = name, error = %e, "failed to parse INTERACTION_CREATE payload");
-                    GatewayEvent::Unknown {
+                    GatewayEvent::Unknown(UnknownEvent {
                         event_name: Some(name.to_string()),
                         op: 0,
                         data: Some(d),
-                    }
+                    })
                 }
             },
 
             // ---- Events we recognise but don't need typed variants for (yet) ----
-            _ => GatewayEvent::Unknown {
+            _ => GatewayEvent::Unknown(UnknownEvent {
                 event_name: Some(name.to_string()),
                 op: 0,
                 data: Some(d),
-            },
+            }),
         }
     }
 }
@@ -199,7 +193,9 @@ pub trait UnknownEventExt {
 impl UnknownEventExt for GatewayEvent {
     fn try_parse_data<T: for<'de> Deserialize<'de>>(&self) -> Option<T> {
         match self {
-            GatewayEvent::Unknown { data: Some(d), .. } => serde_json::from_value(d.clone()).ok(),
+            GatewayEvent::Unknown(UnknownEvent { data: Some(d), .. }) => {
+                serde_json::from_value(d.clone()).ok()
+            }
             _ => None,
         }
     }

@@ -12,7 +12,7 @@ use crate::events::GatewayEvent;
 use crate::gateway::{self, GatewayConfig};
 use crate::handlers;
 use crate::http::DiscordHttpClient;
-use crate::types::{ApplicationMarker, ChannelMarker, Id, UserMarker};
+use crate::types::{ApplicationMarker, ChannelMarker, Id, UnknownEvent, UserMarker};
 
 // ---------------------------------------------------------------------------
 // Resources
@@ -104,6 +104,8 @@ pub async fn start(world: AsyncWorld) -> Result {
 
     // ----- Main event loop -----
     while let Ok(event) = gw.events.recv().await {
+        trace!("Event Received: {event:#?}");
+
         match event {
             GatewayEvent::Ready(ready) => {
                 handlers::on_ready(&world, &http, ready).await;
@@ -138,13 +140,12 @@ pub async fn start(world: AsyncWorld) -> Result {
 
             GatewayEvent::HeartbeatRequest => {}
 
-            GatewayEvent::Unknown {
+            GatewayEvent::Unknown(UnknownEvent {
                 event_name: Some(ref name),
                 ..
-            } => {
+            }) => {
                 tracing::trace!(event = %name, "unhandled gateway event");
             }
-
             _ => {}
         }
     }
