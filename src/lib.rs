@@ -1,22 +1,26 @@
 //! High-level entry point for the Discord bot.
 //!
-//! All low-level gateway, HTTP, and event-handling details live in their
-//! respective modules. This file is intentionally minimal — it wires up the
-//! Bevy app and delegates to [`bot::start`] for the async event loop.
+//! The crate is split into two layers:
+//!
+//! - **Always compiled:** [`discord_types`] (all Discord API types) and
+//!   [`events`] (the typed `GatewayEvent` enum).
+//! - **`io` feature only:** [`discord_io`] (WebSocket gateway, HTTP REST
+//!   client, event handlers, and Bevy bot wiring).
 
-pub mod bot;
+pub mod discord_types;
 pub mod events;
-pub mod gateway;
-pub mod handlers;
-pub mod http;
-pub mod types;
 
+#[cfg(feature = "io")]
+pub mod discord_io;
+
+#[cfg(feature = "io")]
 use beet::prelude::*;
 
 /// Run the Discord bot.
 ///
 /// Sets up a minimal Bevy [`App`] with async support and kicks off the
-/// gateway connection + event loop in [`bot::start`].
+/// gateway connection + event loop in [`discord_io::bot::start`].
+#[cfg(feature = "io")]
 pub fn run() {
     App::new()
         .add_plugins((MinimalPlugins, LogPlugin::default(), AsyncPlugin::default()))
@@ -25,6 +29,7 @@ pub fn run() {
 }
 
 /// Startup system that spawns the async bot task.
+#[cfg(feature = "io")]
 fn start_bot(mut commands: AsyncCommands) {
-    commands.run_local(bot::start);
+    commands.run_local(discord_io::bot::start);
 }

@@ -8,28 +8,41 @@ name = "hello_discord"
 path = "src/lib.rs"
 
 [features]
-default = ["rustls-tls"]
+default = ["io", "rustls-tls"]
 native-tls = ["beet/native-tls"]
 rustls-tls = ["beet/rustls-tls"]
+## Enable the gateway, HTTP, handlers, and Bevy bot wiring.
+io = [
+    "dep:beet",
+    "dep:async-channel",
+    "dep:async-lock",
+    "dep:dotenv",
+    "dep:rand",
+    "dep:tracing-subscriber",
+    "dep:futures-lite",
+]
 ## Enable oauth, poll, voice, and other large twilight-model modules we don't
 ## currently use. Without this, only the core types (id, user, channel, guild,
 ## application, http, gateway/presence, util) are compiled.
 full-model = []
 
 [dependencies]
-beet = { path = "../beet", features = ["net", "tungstenite", "ureq"] }
-async-channel = "2"
-async-lock = "3"
+# --- Always compiled (discord_types + events) ---
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-dotenv = "0.15"
-chrono = "0.4"
-rand = "0.8"
 serde_repr = "0.1"
+chrono = "0.4"
 bitflags = { version = "2", default-features = false }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-futures-lite = "2"
+
+# --- IO feature only (discord_io: gateway, http, bot, handlers) ---
+beet = { path = "../beet", features = ["net", "tungstenite", "ureq", "stack"], optional = true }
+async-channel = { version = "2", optional = true }
+async-lock = { version = "3", optional = true }
+dotenv = { version = "0.15", optional = true }
+rand = { version = "0.8", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+futures-lite = { version = "2", optional = true }
 
 [dev-dependencies]
 serde_test = "1"

@@ -825,7 +825,6 @@ dependencies = [
  "http 1.4.0",
  "itertools",
  "js-sys",
- "mime_guess",
  "notify",
  "notify-debouncer-full",
  "path-clean",

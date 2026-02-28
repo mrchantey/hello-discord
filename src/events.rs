@@ -7,7 +7,7 @@
 use serde::Deserialize;
 use tracing::warn;
 
-use crate::types::*;
+use crate::discord_types::*;
 
 // ---------------------------------------------------------------------------
 // The top-level event enum
