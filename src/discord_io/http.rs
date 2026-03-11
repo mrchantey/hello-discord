@@ -301,7 +301,7 @@ impl DiscordHttpClient {
             let resp_bytes = resp
                 .bytes()
                 .await
-                .map_err(|e: beet::core::prelude::BevyError| HttpError::Transport(e.to_string()))?;
+                .map_err(|e: BevyError| HttpError::Transport(e.to_string()))?;
 
             if status.is_ok() {
                 return Ok(resp_bytes.to_vec());
@@ -403,7 +403,7 @@ impl DiscordHttpClient {
         let resp = req
             .send()
             .await
-            .map_err(|e: beet::core::prelude::BevyError| HttpError::Transport(e.to_string()))?;
+            .map_err(|e: BevyError| HttpError::Transport(e.to_string()))?;
 
         let status = resp.status();
         let rl_info = parse_rate_limit_headers(resp.response_parts());
@@ -416,7 +416,7 @@ impl DiscordHttpClient {
         let resp_bytes = resp
             .bytes()
             .await
-            .map_err(|e: beet::core::prelude::BevyError| HttpError::Transport(e.to_string()))?;
+            .map_err(|e: BevyError| HttpError::Transport(e.to_string()))?;
 
         if status.is_ok() {
             serde_json::from_slice(&resp_bytes).map_err(|e| {
