@@ -7,29 +7,18 @@
 //! - **`io` feature only:** [`discord_io`] (WebSocket gateway, HTTP REST
 //!   client, event handlers, and Bevy bot wiring).
 
+#[cfg(feature = "io")]
+pub mod bot;
+#[cfg(feature = "io")]
+pub mod discord_io;
 pub mod discord_types;
 pub mod events;
 
-#[cfg(feature = "io")]
-pub mod discord_io;
-
-#[cfg(feature = "io")]
-use beet::prelude::*;
-
-/// Run the Discord bot.
-///
-/// Sets up a minimal Bevy [`App`] with async support and kicks off the
-/// gateway connection + event loop in [`discord_io::bot::start`].
-#[cfg(feature = "io")]
-pub fn run() {
-    App::new()
-        .add_plugins((MinimalPlugins, LogPlugin::default(), AsyncPlugin::default()))
-        .add_systems(Startup, start_bot)
-        .run();
-}
-
-/// Startup system that spawns the async bot task.
-#[cfg(feature = "io")]
-fn start_bot(mut commands: AsyncCommands) {
-    commands.run_local(discord_io::bot::start);
+pub mod prelude {
+    #[cfg(feature = "io")]
+    pub use crate::bot::*;
+    #[cfg(feature = "io")]
+    pub use crate::discord_io;
+    pub use crate::discord_types::*;
+    // pub use crate::events::*;
 }

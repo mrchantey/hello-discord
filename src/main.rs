@@ -3,14 +3,18 @@
 //! All transport details live in `discord_io/gateway` (WebSocket) and
 //! `discord_io/http` (REST). This file is purely bot logic: reacting to
 //! typed events.
-
-#[cfg(feature = "io")]
-use hello_discord::run;
+use beet::prelude::*;
+use hello_discord::prelude::*;
 
 fn main() {
-    #[cfg(feature = "io")]
-    run();
+    dotenv::dotenv().ok();
+    App::new()
+        .add_plugins((MinimalPlugins, LogPlugin::default(), AsyncPlugin::default()))
+        .add_systems(Startup, spawn_bot)
+        .run();
+}
 
-    #[cfg(not(feature = "io"))]
-    eprintln!("Built without the `io` feature — nothing to run. Re-build with `--features io`.");
+/// Startup system that spawns the discord bot.
+fn spawn_bot(mut commands: Commands) {
+    commands.spawn(DiscordBot::default());
 }

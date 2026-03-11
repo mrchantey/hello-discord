@@ -7,6 +7,11 @@ edition = "2021"
 name = "hello_discord"
 path = "src/lib.rs"
 
+[[bin]]
+name = "hello_discord"
+path = "src/main.rs"
+required-features = ["io"]
+
 [features]
 default = ["io", "rustls-tls"]
 native-tls = ["beet/native-tls"]
@@ -29,7 +34,8 @@ io = [
 full-model = []
 
 [dependencies]
-beet = { path = "../beet", default-features=false, features = ["net", "json", "stack"] }
+# beet = { path = "../beet", default-features=false }
+beet = { path = "../beet", default-features=false, features = ["net", "json", "tool"] }
 
 
 # --- Always compiled (discord_types + events) ---
@@ -51,5 +57,4 @@ futures-lite = { version = "2", optional = true }
 [dev-dependencies]
 serde_test = "1"
 static_assertions = "1"
-
 beet = { path = "../beet", features = ["testing"] }

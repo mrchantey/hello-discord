@@ -11,70 +11,8 @@ use tracing::{error, info, warn};
 use crate::discord_io::gateway::{self, GatewayConfig};
 use crate::discord_io::handlers;
 use crate::discord_io::http::DiscordHttpClient;
-use crate::discord_types::Message;
 use crate::discord_types::*;
 use crate::events::GatewayEvent;
-
-pub fn default_bot() -> impl Bundle {}
-
-#[derive(Component)]
-pub struct DiscordBot {
-    /// The bot's token, usually loaded from the environment at startup.
-    token: String,
-    /// The event handlers for each gateway event type.
-    handlers: DiscordHandlers,
-}
-
-pub struct DiscordHandlers {
-    /// We've successfully identified / resumed — bot is ready.
-    on_ready: Tool<ReadyEvent, ()>,
-    /// Full guild object lazily sent after READY.
-    on_guild_create: Tool<Guild, ()>,
-    /// A message was created in a channel we can see.
-    on_message_create: Tool<Message, ()>,
-    /// A user's presence (online/idle/dnd/offline) changed.
-    on_presence_update: Tool<PresenceUpdate, ()>,
-    /// An interaction was created (slash command, button, select, modal submit).
-    on_interaction_create: Tool<Interaction, ()>,
-    /// Heartbeat ACK from the gateway (op 11).
-    on_heartbeat_ack: Tool<(), ()>,
-    /// The gateway is asking us to heartbeat immediately (op 1).
-    on_heartbeat_request: Tool<(), ()>,
-    /// Gateway told us to reconnect (op 7).
-    on_reconnect: Tool<(), ()>,
-    /// Session has been invalidated (op 9).
-    on_invalid_session: Tool<bool, ()>,
-    /// An event we received but don't have a typed variant for yet.
-    on_unknown: Tool<UnknownEvent, ()>,
-}
-
-impl Default for DiscordHandlers {
-    fn default() -> Self {
-        Self {
-            on_ready: todo!(),
-            on_guild_create: todo!(),
-            on_message_create: todo!(),
-            on_presence_update: todo!(),
-            on_interaction_create: todo!(),
-            on_heartbeat_ack: todo!(),
-            on_heartbeat_request: todo!(),
-            on_reconnect: todo!(),
-            on_invalid_session: todo!(),
-            on_unknown: todo!(),
-        }
-    }
-}
-
-impl Default for DiscordBot {
-    fn default() -> Self {
-        Self {
-            token: env_ext::var("DISCORD_TOKEN").unwrap_or_else(|_| {
-                panic!("DISCORD_TOKEN environment variable not set");
-            }),
-            handlers: default(),
-        }
-    }
-}
 
 /// Core bot identity and lifecycle state.
 #[derive(Resource)]
@@ -131,20 +69,21 @@ fn gateway_intents() -> u32 {
 /// Initialises Resources, connects to the Discord gateway, and runs the
 /// main event loop — dispatching each event to the appropriate handler
 /// in [`crate::handlers`].
-pub async fn start(world: AsyncWorld) -> Result {
-    dotenv::dotenv().ok();
-
-    let token = std::env::var("DISCORD_TOKEN").map_err(|_| {
-        error!("DISCORD_TOKEN environment variable not set");
-        "DISCORD_TOKEN environment variable not set"
-    })?;
+pub async fn start_gateway_listener(entity: AsyncEntity) -> Result {
+    let token = env_ext::var("DISCORD_TOKEN")?;
 
     // Create the HTTP client (cheap to clone — Arc internals).
     let http = DiscordHttpClient::new(&token);
 
+    entity
+        .world()
+        .with_then(|world| {
+            world.insert_resource(BotState::default());
+            world.insert_resource(GreetState::default());
+        })
+        .await;
+
     // Insert state into the Bevy world as Resources.
-    world.insert_resource_then(BotState::default()).await;
-    world.insert_resource_then(GreetState::default()).await;
 
     // Connect to the Discord gateway.
     let config = GatewayConfig {
@@ -159,6 +98,8 @@ pub async fn start(world: AsyncWorld) -> Result {
     })?;
 
     info!("gateway connected, entering event loop");
+
+    let world = entity.world().clone();
 
     // ----- Main event loop -----
     while let Ok(event) = gw.events.recv().await {
