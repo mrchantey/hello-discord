@@ -8,7 +8,7 @@
 use beet::prelude::*;
 use tracing::{error, info, warn};
 
-use crate::discord_helpers::*;
+use crate::discord_types::*;
 use crate::discord_io::gateway::{self, GatewayConfig};
 use crate::discord_io::handlers;
 use crate::discord_io::http::DiscordHttpClient;

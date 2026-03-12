@@ -2,7 +2,7 @@ use crate::discord_io::bot::start_gateway_listener;
 use crate::prelude::*;
 use beet::prelude::*;
 
-use crate::discord_helpers::Message as DiscordMessage;
+use crate::discord_types::Message as DiscordMessage;
 
 pub fn default_bot() -> impl Bundle {}
 

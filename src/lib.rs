@@ -9,14 +9,14 @@
 
 #[cfg(feature = "io")]
 pub mod bot;
-pub mod discord_helpers;
+pub mod discord_types;
 #[cfg(feature = "io")]
 pub mod discord_io;
 
 pub mod prelude {
     #[cfg(feature = "io")]
     pub use crate::bot::*;
-    pub use crate::discord_helpers::*;
+    pub use crate::discord_types::*;
     #[cfg(feature = "io")]
     pub use crate::discord_io;
 }

@@ -10,7 +10,7 @@
 use beet::prelude::AsyncWorld;
 use tracing::{error, info, warn};
 
-use crate::discord_helpers::*;
+use crate::discord_types::*;
 use crate::discord_io::bot::{BotState, GreetState};
 use crate::discord_io::http::DiscordHttpClient;
 
@@ -20,7 +20,7 @@ use crate::discord_io::http::DiscordHttpClient;
 
 /// Returns the list of slash commands to register with Discord.
 pub fn slash_commands() -> Vec<ApplicationCommand> {
-    use crate::discord_helpers::application::command::CommandOptionType;
+    use crate::discord_types::application::command::CommandOptionType;
 
     vec![
         ApplicationCommandBuilder::chat_input("ping", "Check bot latency").build(),
@@ -732,7 +732,7 @@ async fn handle_component(
 
 /// Extract text input values from a modal submit interaction.
 fn modal_text_inputs(interaction: &Interaction) -> Option<(String, Vec<(String, String)>)> {
-    use crate::discord_helpers::application::interaction::modal::ModalInteractionComponent;
+    use crate::discord_types::application::interaction::modal::ModalInteractionComponent;
 
     match interaction.data.as_ref()? {
         InteractionData::ModalSubmit(data) => {
@@ -926,7 +926,7 @@ mod tests {
         assert_eq!(roll.options[0].name, "sides");
         assert!(matches!(
             roll.options[0].kind,
-            crate::discord_helpers::application::command::CommandOptionType::Integer
+            crate::discord_types::application::command::CommandOptionType::Integer
         ));
         assert_eq!(roll.options[0].required, Some(false));
     }
