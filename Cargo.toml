@@ -30,7 +30,7 @@ io = [
 ]
 [dependencies]
 # beet = { path = "../beet", default-features=false }
-beet = { path = "../beet", default-features=false, features = ["net", "json", "tool"] }
+beet = { path = "../beet", default-features=false, features = ["net", "json"] }
 twilight-model = { version = "0.17" }
 
 # --- Always compiled (discord_types + events) ---

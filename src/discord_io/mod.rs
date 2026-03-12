@@ -4,7 +4,7 @@
 //! This entire module is compiled only when the `io` feature is enabled,
 //! keeping the default build to just [`crate::discord_helpers`].
 
-pub mod bot;
 pub mod gateway;
+pub mod gateway_listener;
 pub mod handlers;
 pub mod http;

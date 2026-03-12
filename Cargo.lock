@@ -790,7 +790,6 @@ dependencies = [
  "beet_net",
  "beet_node",
  "beet_stack",
- "beet_tool",
  "bevy",
  "uuid",
 ]

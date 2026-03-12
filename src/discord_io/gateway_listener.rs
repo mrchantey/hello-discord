@@ -1,0 +1,274 @@
+//! Core bot infrastructure: Bevy Resources, gateway bridge, and async event loop.
+//!
+//! This module owns the "engine" of the bot — connecting to Discord's gateway,
+//! polling events, and dispatching them to handler functions. All mutable state
+//! lives in Bevy [`Resource`]s accessed through [`AsyncWorld`], so no manual
+//! mutexes are needed in the bot layer.
+
+use crate::prelude::*;
+use beet::prelude::*;
+
+use crate::discord_io::gateway::GatewayConfig;
+use crate::discord_io::gateway::{
+	self,
+};
+use crate::discord_io::handlers;
+use crate::discord_io::http::DiscordHttpClient;
+use crate::discord_types::*;
+use crate::tw_gateway::DispatchEvent;
+use crate::tw_gateway::GatewayEvent;
+use crate::tw_gateway::Intents;
+
+/// Core bot identity and lifecycle state.
+#[derive(Resource)]
+pub struct BotState {
+	/// The bot's own user ID (set on READY).
+	pub bot_user_id: Option<Id<UserMarker>>,
+	/// The application ID (set on READY).
+	pub application_id: Option<Id<ApplicationMarker>>,
+	/// Whether slash commands have been registered this session.
+	pub commands_registered: bool,
+	/// Timestamp of when the bot started.
+	pub start_time: Instant,
+}
+
+impl Default for BotState {
+	fn default() -> Self {
+		Self {
+			bot_user_id: None,
+			application_id: None,
+			commands_registered: false,
+			start_time: Instant::now(),
+		}
+	}
+}
+
+/// State for the "greet users who come online" feature.
+#[derive(Resource, Default)]
+pub struct GreetState {
+	/// Channel to send greeting messages in.
+	pub greet_channel_id: Option<Id<ChannelMarker>>,
+	/// Users we've already greeted this session (to avoid spamming).
+	pub greeted_users: HashSet<Id<UserMarker>>,
+}
+
+// ---------------------------------------------------------------------------
+// Gateway intents
+// ---------------------------------------------------------------------------
+
+/// Build the gateway intents using strongly-typed [`Intents`] bitflags.
+fn gateway_intents() -> Intents {
+	Intents::GUILDS
+		| Intents::GUILD_MEMBERS
+		| Intents::GUILD_PRESENCES
+		| Intents::GUILD_MESSAGES
+		| Intents::MESSAGE_CONTENT
+}
+
+// ---------------------------------------------------------------------------
+// Bot entry point
+// ---------------------------------------------------------------------------
+
+/// Async entry point for the bot.
+///
+/// Called from a Bevy startup system via [`AsyncCommands::run_local`].
+/// Initialises Resources, connects to the Discord gateway, and runs the
+/// main event loop — dispatching each event to the appropriate handler
+/// in [`crate::handlers`].
+pub async fn start_gateway_listener(entity: AsyncEntity) -> Result {
+	let token = entity
+		.get::<DiscordBot, _>(|bot| bot.token().to_string())
+		.await?;
+
+	// Create the HTTP client (cheap to clone — Arc internals).
+	let http = DiscordHttpClient::new(&token);
+
+	entity
+		.world()
+		.with_then(|world| {
+			world.insert_resource(BotState::default());
+			world.insert_resource(GreetState::default());
+		})
+		.await;
+
+	// Insert state into the Bevy world as Resources.
+
+	// Connect to the Discord gateway.
+	let config = GatewayConfig {
+		token,
+		intents: gateway_intents(),
+		shard: None, // single-shard
+	};
+
+	let gw = gateway::connect(config).await.map_err(|e| {
+		error!(error = %e, "failed to start gateway");
+		e
+	})?;
+
+	info!("gateway connected, entering event loop");
+
+	let world = entity.world().clone();
+
+	// ----- Main event loop -----
+	while let Ok(event) = gw.events.recv().await {
+		trace!("Event Received: {event:#?}");
+
+		match event {
+			GatewayEvent::Dispatch(_, ref dispatch) => match dispatch {
+				DispatchEvent::Ready(ready) => {
+					handlers::on_ready(&world, &http, ready.clone()).await;
+				}
+
+				DispatchEvent::GuildCreate(guild_create) => {
+					handlers::on_guild_create(&world, guild_create).await;
+				}
+
+				DispatchEvent::PresenceUpdate(presence) => {
+					handlers::on_presence_update(&world, &http, presence).await;
+				}
+
+				DispatchEvent::MessageCreate(msg) => {
+					if msg.author.bot {
+						continue;
+					}
+					handlers::on_message(&world, &http, msg.0.clone()).await;
+				}
+
+				DispatchEvent::InteractionCreate(interaction) => {
+					if let Err(e) =
+						handlers::on_interaction(&world, &http, &interaction.0)
+							.await
+					{
+						error!(error = %e, "failed to handle interaction");
+					}
+				}
+
+				other => {
+					tracing::trace!(event = ?other, "unhandled dispatch event");
+				}
+			},
+
+			// Heartbeat ACK — already logged at debug level in gateway module.
+			GatewayEvent::HeartbeatAck => {}
+
+			// Reconnect / InvalidSession are handled internally by the gateway driver.
+			GatewayEvent::Reconnect | GatewayEvent::InvalidateSession(_) => {}
+
+			// Heartbeat request — handled by the gateway driver.
+			GatewayEvent::Heartbeat => {}
+
+			// Hello — handled during connection setup.
+			GatewayEvent::Hello(_) => {}
+		}
+	}
+
+	warn!("event stream ended, bot shutting down");
+	Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	// -- BotState ----------------------------------------------------------
+
+	#[test]
+	fn bot_state_default_has_no_identity() {
+		let state = BotState::default();
+		assert!(state.bot_user_id.is_none());
+		assert!(state.application_id.is_none());
+		assert!(!state.commands_registered);
+	}
+
+	#[test]
+	fn bot_state_start_time_is_recent() {
+		let before = Instant::now();
+		let state = BotState::default();
+		let after = Instant::now();
+		assert!(state.start_time >= before);
+		assert!(state.start_time <= after);
+	}
+
+	#[test]
+	fn bot_state_tracks_identity() {
+		let mut state = BotState::default();
+		state.bot_user_id = Some(Id::new(12345));
+		state.application_id = Some(Id::new(67890));
+		assert_eq!(state.bot_user_id.map(|id| id.get()), Some(12345));
+		assert_eq!(state.application_id.map(|id| id.get()), Some(67890));
+	}
+
+	#[test]
+	fn bot_state_commands_registered_flag() {
+		let mut state = BotState::default();
+		assert!(!state.commands_registered);
+		state.commands_registered = true;
+		assert!(state.commands_registered);
+	}
+
+	// -- GreetState --------------------------------------------------------
+
+	#[test]
+	fn greet_state_default_is_empty() {
+		let state = GreetState::default();
+		assert!(state.greet_channel_id.is_none());
+		assert!(state.greeted_users.is_empty());
+	}
+
+	#[test]
+	fn greet_state_tracks_greeted_users() {
+		let mut state = GreetState::default();
+		let user_a: Id<UserMarker> = Id::new(111);
+		let user_b: Id<UserMarker> = Id::new(222);
+		assert!(!state.greeted_users.contains(&user_a));
+		state.greeted_users.insert(user_a);
+		assert!(state.greeted_users.contains(&user_a));
+		assert!(!state.greeted_users.contains(&user_b));
+	}
+
+	#[test]
+	fn greet_state_no_duplicate_greetings() {
+		let mut state = GreetState::default();
+		let user_a: Id<UserMarker> = Id::new(111);
+		assert!(state.greeted_users.insert(user_a));
+		// Second insert returns false — user already present.
+		assert!(!state.greeted_users.insert(user_a));
+		assert_eq!(state.greeted_users.len(), 1);
+	}
+
+	#[test]
+	fn greet_state_channel_id_can_be_set() {
+		let mut state = GreetState::default();
+		let chan: Id<ChannelMarker> = Id::new(123);
+		state.greet_channel_id = Some(chan);
+		assert_eq!(state.greet_channel_id.map(|id| id.get()), Some(123));
+	}
+
+	// -- gateway_intents() -------------------------------------------------
+
+	#[test]
+	fn gateway_intents_includes_required_bits() {
+		let intents = gateway_intents();
+		assert!(intents.contains(Intents::GUILDS), "missing GUILDS");
+		assert!(
+			intents.contains(Intents::GUILD_MEMBERS),
+			"missing GUILD_MEMBERS"
+		);
+		assert!(
+			intents.contains(Intents::GUILD_PRESENCES),
+			"missing GUILD_PRESENCES"
+		);
+		assert!(
+			intents.contains(Intents::GUILD_MESSAGES),
+			"missing GUILD_MESSAGES"
+		);
+		assert!(
+			intents.contains(Intents::MESSAGE_CONTENT),
+			"missing MESSAGE_CONTENT"
+		);
+	}
+}

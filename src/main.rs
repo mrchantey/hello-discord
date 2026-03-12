@@ -7,14 +7,16 @@ use beet::prelude::*;
 use hello_discord::prelude::*;
 
 fn main() {
-    dotenv::dotenv().ok();
-    App::new()
-        .add_plugins((MinimalPlugins, LogPlugin::default(), AsyncPlugin::default()))
-        .add_systems(Startup, spawn_bot)
-        .run();
+	dotenv::dotenv().ok();
+	App::new()
+		.add_plugins((
+			MinimalPlugins,
+			LogPlugin::default(),
+			AsyncPlugin::default(),
+		))
+		.add_systems(Startup, spawn_bot)
+		.run();
 }
 
 /// Startup system that spawns the discord bot.
-fn spawn_bot(mut commands: Commands) {
-    commands.spawn(DiscordBot::default());
-}
+fn spawn_bot(mut commands: Commands) { commands.spawn(DiscordBot::default()); }

@@ -1,77 +1,32 @@
-use crate::discord_io::bot::start_gateway_listener;
-use crate::discord_types::Message as DiscordMessage;
-use crate::prelude::*;
+use crate::discord_io::gateway_listener::start_gateway_listener;
 use beet::prelude::*;
-use twilight_model::gateway::payload::incoming::PresenceUpdate;
 
 pub fn default_bot() -> impl Bundle {}
 
 #[derive(Component)]
 #[component(on_add=on_add)]
 pub struct DiscordBot {
-    /// The bot's token, usually loaded from the environment at startup.
-    token: String,
-    /// The event handlers for each gateway event type.
-    pub handlers: DiscordHandlers,
+	/// The bot's token, usually loaded from the environment at startup.
+	token: String,
+}
+
+impl DiscordBot {
+	pub fn new(token: String) -> Self { Self { token } }
+	pub fn token(&self) -> &str { &self.token }
 }
 
 #[allow(unused)]
 fn on_add(mut world: DeferredWorld, cx: HookContext) {
-    let entity = cx.entity;
-    world
-        .commands()
-        .queue_async(async move |world| start_gateway_listener(world.entity(entity)).await);
-}
-
-pub struct DiscordHandlers {
-    /// We've successfully identified / resumed — bot is ready.
-    pub on_ready: Tool<Ready, ()>,
-    /// Full guild object lazily sent after READY.
-    pub on_guild_create: Tool<Guild, ()>,
-    /// A message was created in a channel we can see.
-    pub on_message_create: Tool<DiscordMessage, ()>,
-    /// A user's presence (online/idle/dnd/offline) changed.
-    /// Uses twilight-model's [`PresenceUpdate`](PresenceUpdate) payload.
-    pub on_presence_update: Tool<PresenceUpdate, ()>,
-    /// An interaction was created (slash command, button, select, modal submit).
-    pub on_interaction_create: Tool<Interaction, ()>,
-    /// Heartbeat ACK from the gateway (op 11).
-    pub on_heartbeat_ack: Tool<(), ()>,
-    /// The gateway is asking us to heartbeat immediately (op 1).
-    pub on_heartbeat_request: Tool<(), ()>,
-    /// Gateway told us to reconnect (op 7).
-    pub on_reconnect: Tool<(), ()>,
-    /// Session has been invalidated (op 9).
-    pub on_invalid_session: Tool<bool, ()>,
-}
-
-fn log_event<T: std::fmt::Debug>(value: FuncToolIn<T>) -> Result {
-    let input = value.input;
-    println!("Received event: {input:#?}");
-    Ok(())
-}
-
-impl Default for DiscordHandlers {
-    fn default() -> Self {
-        Self {
-            on_ready: func_tool(log_event),
-            on_guild_create: func_tool(log_event),
-            on_message_create: func_tool(log_event),
-            on_presence_update: func_tool(log_event),
-            on_interaction_create: func_tool(log_event),
-            on_heartbeat_ack: func_tool(log_event),
-            on_heartbeat_request: func_tool(log_event),
-            on_reconnect: func_tool(log_event),
-            on_invalid_session: func_tool(log_event),
-        }
-    }
+	let entity = cx.entity;
+	world.commands().queue_async(async move |world| {
+		start_gateway_listener(world.entity(entity)).await
+	});
 }
 
 impl Default for DiscordBot {
-    fn default() -> Self {
-        Self {
-            token: env_ext::var("DISCORD_TOKEN").unwrap(),
-            handlers: default(),
-        }
-    }
+	fn default() -> Self {
+		Self {
+			token: env_ext::var("DISCORD_TOKEN").unwrap(),
+		}
+	}
 }
