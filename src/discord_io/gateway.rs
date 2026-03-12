@@ -26,7 +26,7 @@ use serde_json::json;
 use tracing::{debug, error, info, warn};
 
 use crate::discord_types::GatewayEvent;
-use crate::discord_types::GatewayPayload;
+use crate::tl_gateway::{CloseAction, GatewayPayload, Intents, OpCode};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -110,8 +110,8 @@ impl SendRateLimiter {
 #[derive(Debug, Clone)]
 pub struct GatewayConfig {
     pub token: String,
-    /// Gateway intents bitmask.
-    pub intents: u32,
+    /// Gateway intents bitflags (strongly typed).
+    pub intents: Intents,
     /// Optional shard info: `[shard_id, num_shards]`.
     pub shard: Option<[u32; 2]>,
 }
@@ -270,7 +270,7 @@ async fn gateway_driver(
         if should_resume {
             let s = session.lock().await;
             let resume = json!({
-                "op": 6,
+                "op": OpCode::Resume,
                 "d": {
                     "token": config.token,
                     "session_id": s.session_id.as_ref().unwrap(),
@@ -288,7 +288,7 @@ async fn gateway_driver(
             info!("sent RESUME");
         } else {
             let mut identify = json!({
-                "op": 2,
+                "op": OpCode::Identify,
                 "d": {
                     "token": config.token,
                     "properties": {
@@ -364,7 +364,7 @@ async fn gateway_driver(
                     let s = hb_session.lock().await;
                     s.sequence
                 };
-                let heartbeat = json!({"op": 1, "d": seq});
+                let heartbeat = json!({"op": OpCode::Heartbeat, "d": seq});
 
                 if let Err(e) = rate_limited_send(&hb_write, &hb_rate_limiter, &heartbeat).await {
                     warn!(error = %e, "heartbeat send failed, stopping heartbeat task");
@@ -504,13 +504,14 @@ async fn read_loop(
 
                 match msg {
                     Message::Text(text) => {
-                        let payload: GatewayPayload = match serde_json::from_str(&text) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                warn!(error = %e, "failed to parse gateway payload");
-                                continue;
-                            }
-                        };
+                        let payload: GatewayPayload =
+                            match serde_json::from_str::<GatewayPayload>(&text) {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    warn!(error = %e, "failed to parse gateway payload");
+                                    continue;
+                                }
+                            };
 
                         // Update sequence number.
                         if let Some(s) = payload.s {
@@ -539,7 +540,7 @@ async fn read_loop(
                                     let s = session.lock().await;
                                     s.sequence
                                 };
-                                let heartbeat = json!({"op": 1, "d": seq});
+                                let heartbeat = json!({"op": OpCode::Heartbeat, "d": seq});
                                 if let Err(e) =
                                     rate_limited_send(ws_write, rate_limiter, &heartbeat).await
                                 {
@@ -587,39 +588,18 @@ async fn read_loop(
                         warn!(close_code = ?code, "WebSocket closed by server");
 
                         if let Some(CloseFrame { code: raw, .. }) = frame {
-                            match raw {
-                                4004 => {
-                                    error!("authentication failed (close 4004)");
+                            let action = CloseAction::from_code(raw);
+                            match action {
+                                CloseAction::Fatal => {
+                                    error!(close_code = raw, "fatal gateway close code");
                                     return DisconnectReason::Fatal;
                                 }
-                                4010 => {
-                                    error!("invalid shard (close 4010)");
-                                    return DisconnectReason::Fatal;
-                                }
-                                4011 => {
-                                    error!("sharding required (close 4011)");
-                                    return DisconnectReason::Fatal;
-                                }
-                                4012 => {
-                                    error!("invalid API version (close 4012)");
-                                    return DisconnectReason::Fatal;
-                                }
-                                4013 => {
-                                    error!("invalid intents (close 4013)");
-                                    return DisconnectReason::Fatal;
-                                }
-                                4014 => {
-                                    error!("disallowed intents (close 4014)");
-                                    return DisconnectReason::Fatal;
-                                }
-                                4007 | 4009 => {
+                                CloseAction::Reidentify => {
+                                    warn!(close_code = raw, "session invalidated by close code");
                                     return DisconnectReason::ShouldReidentify;
                                 }
-                                c => {
-                                    warn!(
-                                        close_code = c,
-                                        "unrecognized close code, will attempt to resume"
-                                    );
+                                CloseAction::Resume => {
+                                    info!(close_code = raw, "resumable close code");
                                     return DisconnectReason::ShouldResume;
                                 }
                             }
@@ -656,8 +636,8 @@ async fn read_hello_from_stream(stream: &mut SocketRead) -> Result<u64, String> 
     let payload: GatewayPayload =
         serde_json::from_str(&text).map_err(|e| format!("failed to parse HELLO: {}", e))?;
 
-    if payload.op != 10 {
-        return Err(format!("expected op 10 (HELLO), got op {}", payload.op));
+    if payload.op != OpCode::Hello {
+        return Err(format!("expected op HELLO, got op {:?}", payload.op));
     }
 
     let interval = payload

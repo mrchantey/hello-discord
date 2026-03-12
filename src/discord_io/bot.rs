@@ -8,10 +8,11 @@
 use beet::prelude::*;
 use tracing::{error, info, warn};
 
-use crate::discord_types::*;
 use crate::discord_io::gateway::{self, GatewayConfig};
 use crate::discord_io::handlers;
 use crate::discord_io::http::DiscordHttpClient;
+use crate::discord_types::*;
+use crate::tl_gateway::Intents;
 
 /// Core bot identity and lifecycle state.
 #[derive(Resource)]
@@ -50,12 +51,13 @@ pub struct GreetState {
 // Gateway intents
 // ---------------------------------------------------------------------------
 
-/// Build the gateway intents bitmask.
-///
-/// GUILDS(1) | GUILD_MEMBERS(2) | GUILD_PRESENCES(256) |
-/// GUILD_MESSAGES(512) | MESSAGE_CONTENT(32768)
-fn gateway_intents() -> u32 {
-    1 | 2 | 256 | 512 | 32768
+/// Build the gateway intents using strongly-typed [`Intents`] bitflags.
+fn gateway_intents() -> Intents {
+    Intents::GUILDS
+        | Intents::GUILD_MEMBERS
+        | Intents::GUILD_PRESENCES
+        | Intents::GUILD_MESSAGES
+        | Intents::MESSAGE_CONTENT
 }
 
 // ---------------------------------------------------------------------------
@@ -239,10 +241,22 @@ mod tests {
     #[test]
     fn gateway_intents_includes_required_bits() {
         let intents = gateway_intents();
-        assert_ne!(intents & 1, 0, "missing GUILDS");
-        assert_ne!(intents & 2, 0, "missing GUILD_MEMBERS");
-        assert_ne!(intents & 256, 0, "missing GUILD_PRESENCES");
-        assert_ne!(intents & 512, 0, "missing GUILD_MESSAGES");
-        assert_ne!(intents & 32768, 0, "missing MESSAGE_CONTENT");
+        assert!(intents.contains(Intents::GUILDS), "missing GUILDS");
+        assert!(
+            intents.contains(Intents::GUILD_MEMBERS),
+            "missing GUILD_MEMBERS"
+        );
+        assert!(
+            intents.contains(Intents::GUILD_PRESENCES),
+            "missing GUILD_PRESENCES"
+        );
+        assert!(
+            intents.contains(Intents::GUILD_MESSAGES),
+            "missing GUILD_MESSAGES"
+        );
+        assert!(
+            intents.contains(Intents::MESSAGE_CONTENT),
+            "missing MESSAGE_CONTENT"
+        );
     }
 }

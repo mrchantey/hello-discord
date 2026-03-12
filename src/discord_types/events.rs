@@ -10,9 +10,11 @@ use tracing::warn;
 use twilight_model::application::interaction::Interaction;
 use twilight_model::channel::message::Message;
 use twilight_model::gateway::payload::incoming::Ready;
+use twilight_model::gateway::OpCode;
 use twilight_model::guild::Guild;
 
-use super::custom::{GatewayPayload, PresenceUpdate, UnknownEvent};
+use super::custom::{PresenceUpdate, UnknownEvent};
+use crate::tl_gateway::GatewayPayload;
 
 // ---------------------------------------------------------------------------
 // The top-level event enum
@@ -65,16 +67,16 @@ impl GatewayEvent {
     pub fn from_payload(payload: GatewayPayload) -> Self {
         match payload.op {
             // ----- Op 0: DISPATCH -----
-            0 => Self::parse_dispatch(payload.t.as_deref(), payload.d),
+            OpCode::Dispatch => Self::parse_dispatch(payload.t.as_deref(), payload.d),
 
             // ----- Op 1: Heartbeat request -----
-            1 => GatewayEvent::HeartbeatRequest,
+            OpCode::Heartbeat => GatewayEvent::HeartbeatRequest,
 
             // ----- Op 7: Reconnect -----
-            7 => GatewayEvent::Reconnect,
+            OpCode::Reconnect => GatewayEvent::Reconnect,
 
             // ----- Op 9: Invalid Session -----
-            9 => {
+            OpCode::InvalidSession => {
                 let resumable = payload
                     .d
                     .as_ref()
@@ -84,12 +86,12 @@ impl GatewayEvent {
             }
 
             // ----- Op 11: Heartbeat ACK -----
-            11 => GatewayEvent::HeartbeatAck,
+            OpCode::HeartbeatAck => GatewayEvent::HeartbeatAck,
 
-            // ----- Anything else -----
-            _ => GatewayEvent::Unknown(UnknownEvent {
+            // ----- Anything else (Identify, Resume, etc. — should not be received) -----
+            other => GatewayEvent::Unknown(UnknownEvent {
                 event_name: payload.t,
-                op: payload.op,
+                op: other,
                 data: payload.d,
             }),
         }
@@ -100,7 +102,7 @@ impl GatewayEvent {
         let Some(name) = event_name else {
             return GatewayEvent::Unknown(UnknownEvent {
                 event_name: None,
-                op: 0,
+                op: OpCode::Dispatch,
                 data,
             });
         };
@@ -108,7 +110,7 @@ impl GatewayEvent {
         let Some(d) = data else {
             return GatewayEvent::Unknown(UnknownEvent {
                 event_name: Some(name.to_string()),
-                op: 0,
+                op: OpCode::Dispatch,
                 data: None,
             });
         };
@@ -120,7 +122,7 @@ impl GatewayEvent {
                     warn!(event = name, error = %e, "failed to parse READY payload");
                     GatewayEvent::Unknown(UnknownEvent {
                         event_name: Some(name.to_string()),
-                        op: 0,
+                        op: OpCode::Dispatch,
                         data: Some(d),
                     })
                 }
@@ -132,7 +134,7 @@ impl GatewayEvent {
                     warn!(event = name, error = %e, "failed to parse GUILD_CREATE payload");
                     GatewayEvent::Unknown(UnknownEvent {
                         event_name: Some(name.to_string()),
-                        op: 0,
+                        op: OpCode::Dispatch,
                         data: Some(d),
                     })
                 }
@@ -144,7 +146,7 @@ impl GatewayEvent {
                     warn!(event = name, error = %e, "failed to parse MESSAGE_CREATE payload");
                     GatewayEvent::Unknown(UnknownEvent {
                         event_name: Some(name.to_string()),
-                        op: 0,
+                        op: OpCode::Dispatch,
                         data: Some(d),
                     })
                 }
@@ -156,7 +158,7 @@ impl GatewayEvent {
                     warn!(event = name, error = %e, "failed to parse PRESENCE_UPDATE payload");
                     GatewayEvent::Unknown(UnknownEvent {
                         event_name: Some(name.to_string()),
-                        op: 0,
+                        op: OpCode::Dispatch,
                         data: Some(d),
                     })
                 }
@@ -168,7 +170,7 @@ impl GatewayEvent {
                     warn!(event = name, error = %e, "failed to parse INTERACTION_CREATE payload");
                     GatewayEvent::Unknown(UnknownEvent {
                         event_name: Some(name.to_string()),
-                        op: 0,
+                        op: OpCode::Dispatch,
                         data: Some(d),
                     })
                 }
@@ -177,7 +179,7 @@ impl GatewayEvent {
             // ---- Events we recognise but don't need typed variants for (yet) ----
             _ => GatewayEvent::Unknown(UnknownEvent {
                 event_name: Some(name.to_string()),
-                op: 0,
+                op: OpCode::Dispatch,
                 data: Some(d),
             }),
         }

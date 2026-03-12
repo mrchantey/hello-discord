@@ -6,8 +6,8 @@
 //! depend on the published `twilight-model` crate and layer our custom
 //! additions on top.
 
-/// Custom types that don't exist in `twilight-model` (gateway envelope,
-/// outbound message body, rate-limit info, etc.)
+/// Custom types that don't exist in `twilight-model` (outbound message body,
+/// rate-limit info, simplified presence, etc.)
 mod custom;
 pub use custom::*;
 
@@ -69,6 +69,7 @@ pub use twilight_model::guild::{Guild, Member, PartialMember, UnavailableGuild};
 // ---- Presence / Gateway ---------------------------------------------------
 pub use twilight_model::gateway::payload::incoming::Ready;
 pub use twilight_model::gateway::presence::{Activity, Status};
+pub use twilight_model::gateway::OpCode;
 
 // ---- Interactions ---------------------------------------------------------
 pub use twilight_model::application::interaction::{

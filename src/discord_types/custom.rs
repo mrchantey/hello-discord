@@ -1,33 +1,17 @@
 //! Types that don't exist in twilight-model.
 //!
-//! These are specific to our implementation and cover gateway envelopes,
-//! outbound message bodies, rate-limit tracking, and simplified presence
-//! payloads that twilight handles differently (via its own gateway crate).
+//! These are specific to our implementation and cover outbound message bodies,
+//! rate-limit tracking, and simplified presence payloads that twilight handles
+//! differently (via its own gateway crate).
 
 use serde::{Deserialize, Serialize};
 
 use twilight_model::channel::message::component::Component;
 use twilight_model::channel::message::embed::Embed;
 use twilight_model::gateway::presence::Activity;
+use twilight_model::gateway::OpCode;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker, UserMarker};
 use twilight_model::id::Id;
-
-// ---------------------------------------------------------------------------
-// Gateway payload (the raw WebSocket envelope) — not in twilight-model
-// ---------------------------------------------------------------------------
-
-/// Raw gateway payload envelope.
-///
-/// Every message on the Discord WebSocket is wrapped in this structure.
-/// Twilight handles this in its `twilight-gateway` crate, but we do our own
-/// gateway handling so we need the raw envelope.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GatewayPayload {
-    pub op: u8,
-    pub d: Option<serde_json::Value>,
-    pub s: Option<u64>,
-    pub t: Option<String>,
-}
 
 // ---------------------------------------------------------------------------
 // PRESENCE_UPDATE event payload
@@ -48,10 +32,12 @@ pub struct PresenceUpdate {
 }
 
 /// An event we received from the gateway that we don't have a typed variant for.
+///
+/// Uses the strongly-typed [`OpCode`] instead of a raw `u8`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UnknownEvent {
     pub event_name: Option<String>,
-    pub op: u8,
+    pub op: OpCode,
     pub data: Option<serde_json::Value>,
 }
 
@@ -193,11 +179,12 @@ mod tests {
     }
 
     #[test]
-    fn gateway_payload_deserializes() {
-        let json = r#"{"op":0,"d":null,"s":1,"t":"READY"}"#;
-        let payload: GatewayPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.op, 0);
-        assert_eq!(payload.s, Some(1));
-        assert_eq!(payload.t.as_deref(), Some("READY"));
+    fn unknown_event_uses_opcode() {
+        let event = UnknownEvent {
+            event_name: Some("SOME_EVENT".into()),
+            op: OpCode::Dispatch,
+            data: None,
+        };
+        assert_eq!(event.op, OpCode::Dispatch);
     }
 }
