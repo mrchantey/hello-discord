@@ -1,7 +1,8 @@
 use crate::discord_io::bot::start_gateway_listener;
-use crate::prelude::Message;
 use crate::prelude::*;
 use beet::prelude::*;
+
+use crate::discord_helpers::Message as DiscordMessage;
 
 pub fn default_bot() -> impl Bundle {}
 
@@ -28,7 +29,7 @@ pub struct DiscordHandlers {
     /// Full guild object lazily sent after READY.
     pub on_guild_create: Tool<Guild, ()>,
     /// A message was created in a channel we can see.
-    pub on_message_create: Tool<Message, ()>,
+    pub on_message_create: Tool<DiscordMessage, ()>,
     /// A user's presence (online/idle/dnd/offline) changed.
     pub on_presence_update: Tool<PresenceUpdate, ()>,
     /// An interaction was created (slash command, button, select, modal submit).

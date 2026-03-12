@@ -13,10 +13,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
-use crate::discord_types::id::marker::{ApplicationMarker, ChannelMarker, GuildMarker, InteractionMarker};
-use crate::discord_types::id::Id;
-use crate::discord_types::Message;
-use crate::discord_types::*;
+use crate::discord_helpers::id::marker::{
+    ApplicationMarker, ChannelMarker, GuildMarker, InteractionMarker,
+};
+use crate::discord_helpers::id::Id;
+use crate::discord_helpers::Message;
+use crate::discord_helpers::*;
 use serde_json::json;
 
 // ---------------------------------------------------------------------------

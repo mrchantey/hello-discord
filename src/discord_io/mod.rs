@@ -2,8 +2,7 @@
 //! event-handlers, and the Bevy bot wiring.
 //!
 //! This entire module is compiled only when the `io` feature is enabled,
-//! keeping the default build to just [`crate::discord_types`] and
-//! [`crate::events`].
+//! keeping the default build to just [`crate::discord_helpers`].
 
 pub mod bot;
 pub mod gateway;
