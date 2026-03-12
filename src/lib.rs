@@ -2,11 +2,24 @@
 //!
 //! The crate is split into two layers:
 //!
-//! - **Always compiled:** [`discord_types`] (re-exports from `twilight-model`
-//!   plus our custom types, builders, and extension traits) and [`tl_gateway`]
-//!   (lightweight gateway types borrowed from `twilight-model`).
+//! - **Always compiled:** [`discord_types`] (custom types, builders, and
+//!   extension traits layered on top of `twilight-model`) and [`tw_gateway`]
+//!   (lightweight gateway envelope and session types).
 //! - **`io` feature only:** [`discord_io`] (WebSocket gateway, HTTP REST
 //!   client, event handlers, and Bevy bot wiring).
+//!
+//! # Importing twilight types
+//!
+//! This crate does **not** re-export anything from `twilight-model`. Import
+//! twilight types directly:
+//!
+//! ```ignore
+//! use twilight_model::channel::message::Message;
+//! use twilight_model::id::{Id, marker::ChannelMarker};
+//! ```
+//!
+//! `use crate::prelude::*;` (or `use hello_discord::prelude::*;`) brings in
+//! all types and extension traits *defined in this crate*.
 
 #[cfg(feature = "io")]
 pub mod bot;

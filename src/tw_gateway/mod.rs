@@ -13,28 +13,14 @@ use std::time::Duration;
 use std::time::Instant;
 
 // =========================================================================
-// Re-exports from twilight-model::gateway
+// Private imports from twilight-model used within this module
+// (intentionally not re-exported — callers import twilight_model directly)
 // =========================================================================
 
-pub use twilight_model::gateway::CloseCode;
-pub use twilight_model::gateway::CloseFrame;
-pub use twilight_model::gateway::Intents;
-pub use twilight_model::gateway::OpCode;
-
-// =========================================================================
-// Re-exports from twilight-model::gateway::event / payload
-// =========================================================================
-
-pub use twilight_model::gateway::event::DispatchEvent;
-pub use twilight_model::gateway::event::Event;
-pub use twilight_model::gateway::event::EventType;
-pub use twilight_model::gateway::event::GatewayEvent;
-pub use twilight_model::gateway::event::GatewayEventDeserializer;
-pub use twilight_model::gateway::payload::incoming::Hello;
-pub use twilight_model::gateway::payload::incoming::Ready;
-pub use twilight_model::gateway::payload::incoming::{
-	self as incoming,
-};
+use twilight_model::gateway::event::GatewayEvent;
+use twilight_model::gateway::event::GatewayEventDeserializer;
+use twilight_model::gateway::CloseCode;
+use twilight_model::gateway::OpCode;
 
 // =========================================================================
 // Gateway payload envelope
@@ -107,6 +93,8 @@ impl CloseAction {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use twilight_model::gateway::Intents;
+	use twilight_model::gateway::OpCode;
 
 	#[test]
 	fn gateway_payload_deserializes() {

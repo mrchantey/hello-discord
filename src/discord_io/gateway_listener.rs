@@ -5,19 +5,24 @@
 //! lives in Bevy [`Resource`]s accessed through [`AsyncWorld`], so no manual
 //! mutexes are needed in the bot layer.
 
-use crate::prelude::*;
-use beet::prelude::*;
+use std::collections::HashSet;
+use std::time::Instant;
 
+use beet::prelude::*;
 use crate::discord_io::gateway::GatewayConfig;
 use crate::discord_io::gateway::{
 	self,
 };
 use crate::discord_io::handlers;
 use crate::discord_io::http::DiscordHttpClient;
-use crate::discord_types::*;
-use crate::tw_gateway::DispatchEvent;
-use crate::tw_gateway::GatewayEvent;
-use crate::tw_gateway::Intents;
+use crate::prelude::*;
+use twilight_model::gateway::event::DispatchEvent;
+use twilight_model::gateway::event::GatewayEvent;
+use twilight_model::gateway::Intents;
+use twilight_model::id::marker::ApplicationMarker;
+use twilight_model::id::marker::ChannelMarker;
+use twilight_model::id::marker::UserMarker;
+use twilight_model::id::Id;
 
 /// Core bot identity and lifecycle state.
 #[derive(Resource)]

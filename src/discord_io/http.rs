@@ -15,14 +15,18 @@ use std::time::Instant;
 use tracing::debug;
 use tracing::warn;
 
-use crate::discord_types::id::marker::ApplicationMarker;
-use crate::discord_types::id::marker::ChannelMarker;
-use crate::discord_types::id::marker::GuildMarker;
-use crate::discord_types::id::marker::InteractionMarker;
-use crate::discord_types::id::Id;
-use crate::discord_types::Message;
 use crate::discord_types::*;
 use serde_json::json;
+use twilight_model::application::command::Command as ApplicationCommand;
+use twilight_model::channel::message::Message;
+use twilight_model::channel::Channel;
+use twilight_model::guild::Guild;
+use twilight_model::http::interaction::InteractionResponse;
+use twilight_model::id::marker::ApplicationMarker;
+use twilight_model::id::marker::ChannelMarker;
+use twilight_model::id::marker::GuildMarker;
+use twilight_model::id::marker::InteractionMarker;
+use twilight_model::id::Id;
 
 // ---------------------------------------------------------------------------
 // Constants

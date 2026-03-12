@@ -15,18 +15,34 @@ use beet::prelude::AsyncWorld;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
+use twilight_model::application::command::Command;
+use twilight_model::application::interaction::application_command::CommandDataOption;
+use twilight_model::application::interaction::application_command::CommandOptionValue;
+use twilight_model::application::interaction::Interaction;
+use twilight_model::application::interaction::InteractionData;
+use twilight_model::application::interaction::InteractionType;
+use twilight_model::channel::message::component::SelectMenuOption;
+use twilight_model::channel::message::embed::Embed;
+use twilight_model::channel::message::Message;
+use twilight_model::channel::message::MessageFlags;
+use twilight_model::channel::ChannelType;
 use twilight_model::gateway::payload::incoming::GuildCreate;
 use twilight_model::gateway::payload::incoming::PresenceUpdate;
+use twilight_model::gateway::payload::incoming::Ready;
 use twilight_model::gateway::presence::Status;
 use twilight_model::gateway::presence::UserOrId;
+use twilight_model::guild::Guild;
+use twilight_model::http::interaction::InteractionResponse;
+use twilight_model::http::interaction::InteractionResponseData;
+use twilight_model::user::User;
 
 // ---------------------------------------------------------------------------
 // Slash command definitions
 // ---------------------------------------------------------------------------
 
 /// Returns the list of slash commands to register with Discord.
-pub fn slash_commands() -> Vec<ApplicationCommand> {
-	use crate::discord_types::application::command::CommandOptionType;
+pub fn slash_commands() -> Vec<Command> {
+	use twilight_model::application::command::CommandOptionType;
 
 	vec![
 		Command::chat_input("ping", "Check bot latency"),
@@ -809,7 +825,7 @@ async fn handle_component(
 fn modal_text_inputs(
 	interaction: &Interaction,
 ) -> Option<(String, Vec<(String, String)>)> {
-	use crate::discord_types::application::interaction::modal::ModalInteractionComponent;
+	use twilight_model::application::interaction::modal::ModalInteractionComponent;
 
 	match interaction.data.as_ref()? {
 		InteractionData::ModalSubmit(data) => {
@@ -963,6 +979,8 @@ fn help_text() -> String {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use twilight_model::application::command::CommandOptionType;
+	use twilight_model::http::interaction::InteractionResponseType;
 
 	// -- slash_commands() --------------------------------------------------
 
@@ -999,10 +1017,7 @@ mod tests {
 		let roll = cmds.iter().find(|c| c.name == "roll").expect("no /roll");
 		assert_eq!(roll.options.len(), 1);
 		assert_eq!(roll.options[0].name, "sides");
-		assert!(matches!(
-            roll.options[0].kind,
-            crate::discord_types::application::command::CommandOptionType::Integer
-        ));
+		assert!(matches!(roll.options[0].kind, CommandOptionType::Integer));
 		assert_eq!(roll.options[0].required, Some(false));
 	}
 

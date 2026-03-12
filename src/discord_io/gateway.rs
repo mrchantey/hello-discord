@@ -38,11 +38,11 @@ use tracing::warn;
 
 use crate::tw_gateway::parse_gateway_event;
 use crate::tw_gateway::CloseAction;
-use crate::tw_gateway::DispatchEvent;
-use crate::tw_gateway::GatewayEvent;
 use crate::tw_gateway::GatewayPayload;
-use crate::tw_gateway::Intents;
-use crate::tw_gateway::OpCode;
+use twilight_model::gateway::event::DispatchEvent;
+use twilight_model::gateway::event::GatewayEvent;
+use twilight_model::gateway::Intents;
+use twilight_model::gateway::OpCode;
 
 // ---------------------------------------------------------------------------
 // Constants
