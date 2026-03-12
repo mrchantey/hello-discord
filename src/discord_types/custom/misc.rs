@@ -1,8 +1,4 @@
-//! Types that don't exist in twilight-model.
-//!
-//! These are specific to `hello-discord` and cover gateway envelopes,
-//! outbound message bodies, rate-limit tracking, and READY event payloads
-//! that twilight handles differently (via its own gateway crate).
+
 
 use serde::{Deserialize, Serialize};
 use serde_repr::Serialize_repr;

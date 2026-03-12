@@ -11,7 +11,7 @@ pub struct DiscordBot {
     /// The bot's token, usually loaded from the environment at startup.
     token: String,
     /// The event handlers for each gateway event type.
-    handlers: DiscordHandlers,
+    pub handlers: DiscordHandlers,
 }
 
 #[allow(unused)]
@@ -24,25 +24,25 @@ fn on_add(mut world: DeferredWorld, cx: HookContext) {
 
 pub struct DiscordHandlers {
     /// We've successfully identified / resumed — bot is ready.
-    on_ready: Tool<ReadyEvent, ()>,
+    pub on_ready: Tool<ReadyEvent, ()>,
     /// Full guild object lazily sent after READY.
-    on_guild_create: Tool<Guild, ()>,
+    pub on_guild_create: Tool<Guild, ()>,
     /// A message was created in a channel we can see.
-    on_message_create: Tool<Message, ()>,
+    pub on_message_create: Tool<Message, ()>,
     /// A user's presence (online/idle/dnd/offline) changed.
-    on_presence_update: Tool<PresenceUpdate, ()>,
+    pub on_presence_update: Tool<PresenceUpdate, ()>,
     /// An interaction was created (slash command, button, select, modal submit).
-    on_interaction_create: Tool<Interaction, ()>,
+    pub on_interaction_create: Tool<Interaction, ()>,
     /// Heartbeat ACK from the gateway (op 11).
-    on_heartbeat_ack: Tool<(), ()>,
+    pub on_heartbeat_ack: Tool<(), ()>,
     /// The gateway is asking us to heartbeat immediately (op 1).
-    on_heartbeat_request: Tool<(), ()>,
+    pub on_heartbeat_request: Tool<(), ()>,
     /// Gateway told us to reconnect (op 7).
-    on_reconnect: Tool<(), ()>,
+    pub on_reconnect: Tool<(), ()>,
     /// Session has been invalidated (op 9).
-    on_invalid_session: Tool<bool, ()>,
+    pub on_invalid_session: Tool<bool, ()>,
     /// An event we received but don't have a typed variant for yet.
-    on_unknown: Tool<UnknownEvent, ()>,
+    pub on_unknown: Tool<UnknownEvent, ()>,
 }
 
 fn log_event<T: std::fmt::Debug>(value: FuncToolIn<T>) -> Result {

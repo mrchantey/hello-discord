@@ -9,6 +9,44 @@ use tracing::warn;
 
 use crate::discord_types::*;
 
+// #[derive(EntityEvent)]
+// pub struct Ready
+
+// #[derive(Debug, Clone)]
+// pub enum GatewayEvent {
+//     /// We've successfully identified / resumed — bot is ready.
+//     Ready(ReadyEvent),
+
+//     /// Full guild object lazily sent after READY.
+//     GuildCreate(Guild),
+
+//     /// A message was created in a channel we can see.
+//     MessageCreate(Message),
+
+//     /// A user's presence (online/idle/dnd/offline) changed.
+//     PresenceUpdate(PresenceUpdate),
+
+//     /// An interaction was created (slash command, button, select, modal submit).
+//     InteractionCreate(Interaction),
+
+//     /// Heartbeat ACK from the gateway (op 11).
+//     HeartbeatAck,
+
+//     /// The gateway is asking us to heartbeat immediately (op 1).
+//     HeartbeatRequest,
+
+//     /// Gateway told us to reconnect (op 7).
+//     Reconnect,
+
+//     /// Session has been invalidated (op 9). The inner bool indicates whether
+//     /// the session is resumable (`true`) or we must re-identify (`false`).
+//     InvalidSession(bool),
+
+//     /// An event we received but don't have a typed variant for yet.
+//     /// Carries the event name and raw JSON so callers can still inspect it.
+//     Unknown(UnknownEvent),
+// }
+
 // ---------------------------------------------------------------------------
 // The top-level event enum
 // ---------------------------------------------------------------------------

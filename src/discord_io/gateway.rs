@@ -25,7 +25,7 @@ use futures_lite::future::race;
 use serde_json::json;
 use tracing::{debug, error, info, warn};
 
-use crate::events::GatewayEvent;
+use crate::discord_types::GatewayEvent;
 use crate::discord_types::GatewayPayload;
 
 // ---------------------------------------------------------------------------

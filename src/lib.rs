@@ -12,7 +12,6 @@ pub mod bot;
 #[cfg(feature = "io")]
 pub mod discord_io;
 pub mod discord_types;
-pub mod events;
 
 pub mod prelude {
     #[cfg(feature = "io")]
@@ -20,5 +19,4 @@ pub mod prelude {
     #[cfg(feature = "io")]
     pub use crate::discord_io;
     pub use crate::discord_types::*;
-    // pub use crate::events::*;
 }

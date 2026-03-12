@@ -54,6 +54,11 @@
 // Sub-modules — forked from twilight-model
 // ===========================================================================
 
+/// Custom types that are not included in `twilight-model`
+mod custom;
+/// Custom types that are not included in `twilight-model`
+pub use custom::*;
+
 /// Application commands and interactions.
 pub mod application;
 
@@ -113,9 +118,6 @@ mod test;
 /// Builder patterns for ergonomic type construction.
 pub mod builders;
 
-/// Types that don't exist in twilight-model.
-pub mod custom;
-
 /// Extension traits for twilight types.
 pub mod ext;
 
@@ -163,13 +165,6 @@ pub use self::application::interaction::{
     Interaction, InteractionData, InteractionType,
 };
 
-// ---- Interaction responses (what we send back) ----------------------------
-// We use our own simplified InteractionResponse / InteractionCallbackType /
-// InteractionCallbackData from the `custom` module rather than twilight's
-// `http::interaction` types, because ours support `Default` and are easier
-// to construct with struct-update syntax (`..Default::default()`).
-pub use self::custom::{InteractionCallbackData, InteractionCallbackType, InteractionResponse};
-
 // ---- Application commands (registration) ----------------------------------
 pub use self::application::command::CommandOptionType;
 pub use self::application::command::{
@@ -179,12 +174,6 @@ pub use self::application::command::{
 
 // ---- Builders (our additions) ---------------------------------------------
 pub use self::builders::{ApplicationCommandBuilder, EmbedBuilder};
-
-// ---- Custom types (our additions) -----------------------------------------
-pub use self::custom::{
-    CreateMessage, GatewayPayload, PartialUser, PresenceUpdate, RateLimitInfo, ReadyApplication,
-    ReadyEvent, UnknownEvent,
-};
 
 // ---- Extension traits (our additions) -------------------------------------
 pub use self::ext::{GuildExt, InteractionExt, MessageExt, UserExt};

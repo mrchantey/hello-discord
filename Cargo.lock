@@ -906,13 +906,12 @@ version = "0.0.9-dev.4"
 dependencies = [
  "beet_core",
  "bevy",
- "bevy_ratatui",
  "bytes",
  "extend",
  "nu-ansi-term",
  "pulldown-cmark",
- "ratatui",
  "thiserror 1.0.69",
+ "webbrowser",
  "winnow",
 ]
 

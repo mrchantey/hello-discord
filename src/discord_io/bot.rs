@@ -12,7 +12,6 @@ use crate::discord_io::gateway::{self, GatewayConfig};
 use crate::discord_io::handlers;
 use crate::discord_io::http::DiscordHttpClient;
 use crate::discord_types::*;
-use crate::events::GatewayEvent;
 
 /// Core bot identity and lifecycle state.
 #[derive(Resource)]
