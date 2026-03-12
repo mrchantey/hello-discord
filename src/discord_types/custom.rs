@@ -1,21 +1,16 @@
 //! Types that don't exist in twilight-model.
 //!
 //! These are specific to our implementation and cover gateway envelopes,
-//! outbound message bodies, rate-limit tracking, and READY event payloads
-//! that twilight handles differently (via its own gateway crate).
+//! outbound message bodies, rate-limit tracking, and simplified presence
+//! payloads that twilight handles differently (via its own gateway crate).
 
 use serde::{Deserialize, Serialize};
-use serde_repr::Serialize_repr;
 
 use twilight_model::channel::message::component::Component;
 use twilight_model::channel::message::embed::Embed;
 use twilight_model::gateway::presence::Activity;
-use twilight_model::guild::UnavailableGuild;
-use twilight_model::id::marker::{
-    ApplicationMarker, ChannelMarker, GuildMarker, MessageMarker, UserMarker,
-};
+use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker, UserMarker};
 use twilight_model::id::Id;
-use twilight_model::user::User;
 
 // ---------------------------------------------------------------------------
 // Gateway payload (the raw WebSocket envelope) — not in twilight-model
@@ -32,32 +27,6 @@ pub struct GatewayPayload {
     pub d: Option<serde_json::Value>,
     pub s: Option<u64>,
     pub t: Option<String>,
-}
-
-// ---------------------------------------------------------------------------
-// READY event payload
-// ---------------------------------------------------------------------------
-
-/// The READY event data sent by the gateway after a successful IDENTIFY.
-///
-/// Twilight parses this inside its gateway crate. We define it here because
-/// we run our own gateway loop.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ReadyEvent {
-    pub v: u8,
-    pub user: User,
-    pub session_id: String,
-    pub resume_gateway_url: String,
-    #[serde(default)]
-    pub guilds: Vec<UnavailableGuild>,
-    pub application: ReadyApplication,
-}
-
-/// Minimal application object embedded in [`ReadyEvent`].
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ReadyApplication {
-    pub id: Id<ApplicationMarker>,
-    pub flags: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -178,79 +147,6 @@ pub struct CreateMessageReference {
 }
 
 // ---------------------------------------------------------------------------
-// Interaction response types
-// ---------------------------------------------------------------------------
-
-/// An interaction response sent back to Discord.
-///
-/// This mirrors twilight's `InteractionResponse` but uses our simplified
-/// `InteractionCallbackData` that's easier to construct with `Default`.
-#[derive(Debug, Clone, Serialize)]
-pub struct InteractionResponse {
-    #[serde(rename = "type")]
-    pub kind: InteractionCallbackType,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<InteractionCallbackData>,
-}
-
-/// The type of callback for an interaction response.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr)]
-#[repr(u8)]
-pub enum InteractionCallbackType {
-    Pong = 1,
-    ChannelMessageWithSource = 4,
-    DeferredChannelMessageWithSource = 5,
-    DeferredUpdateMessage = 6,
-    UpdateMessage = 7,
-    ApplicationCommandAutocompleteResult = 8,
-    Modal = 9,
-}
-
-// Allow deserializing as well (useful in tests / echo scenarios).
-impl<'de> Deserialize<'de> for InteractionCallbackType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let v = u8::deserialize(deserializer)?;
-        match v {
-            1 => Ok(Self::Pong),
-            4 => Ok(Self::ChannelMessageWithSource),
-            5 => Ok(Self::DeferredChannelMessageWithSource),
-            6 => Ok(Self::DeferredUpdateMessage),
-            7 => Ok(Self::UpdateMessage),
-            8 => Ok(Self::ApplicationCommandAutocompleteResult),
-            9 => Ok(Self::Modal),
-            _ => Err(serde::de::Error::custom(format!(
-                "unknown InteractionCallbackType: {}",
-                v
-            ))),
-        }
-    }
-}
-
-/// Data payload for an interaction callback.
-///
-/// This is our simplified version that supports `Default` for easy
-/// construction with struct update syntax (`..Default::default()`).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct InteractionCallbackData {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub embeds: Option<Vec<Embed>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub components: Option<Vec<Component>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub flags: Option<u32>,
-    /// For modal responses.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub custom_id: Option<String>,
-}
-
-// ---------------------------------------------------------------------------
 // Rate-limit info parsed from response headers
 // ---------------------------------------------------------------------------
 
@@ -303,14 +199,5 @@ mod tests {
         assert_eq!(payload.op, 0);
         assert_eq!(payload.s, Some(1));
         assert_eq!(payload.t.as_deref(), Some("READY"));
-    }
-
-    #[test]
-    fn interaction_callback_type_roundtrip() {
-        let ty = InteractionCallbackType::ChannelMessageWithSource;
-        let json = serde_json::to_string(&ty).unwrap();
-        assert_eq!(json, "4");
-        let parsed: InteractionCallbackType = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, ty);
     }
 }

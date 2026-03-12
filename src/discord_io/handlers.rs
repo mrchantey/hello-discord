@@ -10,9 +10,9 @@
 use beet::prelude::AsyncWorld;
 use tracing::{error, info, warn};
 
-use crate::discord_types::*;
 use crate::discord_io::bot::{BotState, GreetState};
 use crate::discord_io::http::DiscordHttpClient;
+use crate::discord_types::*;
 
 // ---------------------------------------------------------------------------
 // Slash command definitions
@@ -23,31 +23,22 @@ pub fn slash_commands() -> Vec<ApplicationCommand> {
     use crate::discord_types::application::command::CommandOptionType;
 
     vec![
-        ApplicationCommandBuilder::chat_input("ping", "Check bot latency").build(),
-        ApplicationCommandBuilder::chat_input("uptime", "See how long the bot has been running")
-            .build(),
-        ApplicationCommandBuilder::chat_input("roll", "Roll a dice")
-            .simple_option(
-                CommandOptionType::Integer,
-                "sides",
-                "Number of sides (default: 6)",
-                false,
-            )
-            .build(),
-        ApplicationCommandBuilder::chat_input("serverinfo", "Show server information").build(),
-        ApplicationCommandBuilder::chat_input("whoami", "Show info about yourself").build(),
-        ApplicationCommandBuilder::chat_input("count", "Count messages in this channel").build(),
-        ApplicationCommandBuilder::chat_input(
-            "first",
-            "Show the first message ever sent in this channel",
-        )
-        .build(),
-        ApplicationCommandBuilder::chat_input("help", "Show available commands").build(),
-        ApplicationCommandBuilder::chat_input("report", "Submit a report via a pop-up form")
-            .build(),
-        ApplicationCommandBuilder::chat_input("send-logo", "Send the bot logo").build(),
-        ApplicationCommandBuilder::chat_input("demo-select", "Demo the select menu component")
-            .build(),
+        Command::chat_input("ping", "Check bot latency"),
+        Command::chat_input("uptime", "See how long the bot has been running"),
+        Command::chat_input("roll", "Roll a dice").with_simple_option(
+            CommandOptionType::Integer,
+            "sides",
+            "Number of sides (default: 6)",
+            false,
+        ),
+        Command::chat_input("serverinfo", "Show server information"),
+        Command::chat_input("whoami", "Show info about yourself"),
+        Command::chat_input("count", "Count messages in this channel"),
+        Command::chat_input("first", "Show the first message ever sent in this channel"),
+        Command::chat_input("help", "Show available commands"),
+        Command::chat_input("report", "Submit a report via a pop-up form"),
+        Command::chat_input("send-logo", "Send the bot logo"),
+        Command::chat_input("demo-select", "Demo the select menu component"),
     ]
 }
 
@@ -59,7 +50,7 @@ pub fn slash_commands() -> Vec<ApplicationCommand> {
 ///
 /// Stores identity information in [`BotState`] and registers slash commands
 /// globally (once per session).
-pub async fn on_ready(world: &AsyncWorld, http: &DiscordHttpClient, ready: ReadyEvent) {
+pub async fn on_ready(world: &AsyncWorld, http: &DiscordHttpClient, ready: Ready) {
     info!(user = %ready.user.tag(), guilds = ready.guilds.len(), "bot is ready!");
 
     let bot_user_id = ready.user.id;
@@ -411,10 +402,7 @@ pub async fn on_interaction(
         InteractionType::MessageComponent => handle_component(http, interaction).await,
         InteractionType::ModalSubmit => handle_modal_submit(http, interaction).await,
         InteractionType::Ping => {
-            let resp = InteractionResponse {
-                kind: InteractionCallbackType::Pong,
-                data: None,
-            };
+            let resp = InteractionResponse::pong();
             http.create_interaction_response(interaction.id, &interaction.token, &resp)
                 .await?;
             Ok(())
@@ -481,18 +469,15 @@ async fn handle_slash_command(
             let result = (rand::random::<u32>() % sides) + 1;
             let text = format!("🎲 Rolling a d{}... **{}**!", sides, result);
 
-            InteractionResponse {
-                kind: InteractionCallbackType::ChannelMessageWithSource,
-                data: Some(InteractionCallbackData {
-                    content: Some(text),
-                    components: Some(vec![action_row(vec![button(
+            InteractionResponse::message(
+                InteractionResponseData::default()
+                    .with_content(text)
+                    .with_components(vec![action_row(vec![button(
                         1,
                         "🎲 Reroll",
                         format!("reroll:{}", sides),
                     )])]),
-                    ..Default::default()
-                }),
-            }
+            )
         }
 
         "serverinfo" => {
@@ -556,25 +541,19 @@ async fn handle_slash_command(
 
         "help" => text_response(help_text()),
 
-        "report" => InteractionResponse {
-            kind: InteractionCallbackType::Modal,
-            data: Some(InteractionCallbackData {
-                title: Some("📝 Submit a Report".to_string()),
-                custom_id: Some("report_modal".to_string()),
-                components: Some(vec![
+        "report" => InteractionResponse::modal(
+            InteractionResponseData::default()
+                .with_title("📝 Submit a Report")
+                .with_custom_id("report_modal")
+                .with_components(vec![
                     action_row(vec![text_input("report_subject", "Subject", 1, true)]),
                     action_row(vec![text_input("report_body", "Description", 2, true)]),
                 ]),
-                ..Default::default()
-            }),
-        },
+        ),
 
         "send-logo" => {
             // Acknowledge first, then send file as a follow-up.
-            let ack = InteractionResponse {
-                kind: InteractionCallbackType::DeferredChannelMessageWithSource,
-                data: None,
-            };
+            let ack = InteractionResponse::defer();
             http.create_interaction_response(interaction.id, &interaction.token, &ack)
                 .await?;
 
@@ -609,11 +588,10 @@ async fn handle_slash_command(
             return Ok(());
         }
 
-        "demo-select" => InteractionResponse {
-            kind: InteractionCallbackType::ChannelMessageWithSource,
-            data: Some(InteractionCallbackData {
-                content: Some("Please select your favorite programming language:".to_string()),
-                components: Some(vec![action_row(vec![string_select(
+        "demo-select" => InteractionResponse::message(
+            InteractionResponseData::default()
+                .with_content("Please select your favorite programming language:")
+                .with_components(vec![action_row(vec![string_select(
                     "language_select",
                     "Choose a language...",
                     vec![
@@ -647,9 +625,7 @@ async fn handle_slash_command(
                         },
                     ],
                 )])]),
-                ..Default::default()
-            }),
-        },
+        ),
 
         _ => {
             info!(command = name, "unknown slash command");
@@ -691,32 +667,26 @@ async fn handle_component(
         let result = (rand::random::<u32>() % sides) + 1;
         let text = format!("🎲 Rolling a d{}... **{}**!", sides, result);
 
-        let response = InteractionResponse {
-            kind: InteractionCallbackType::UpdateMessage,
-            data: Some(InteractionCallbackData {
-                content: Some(text),
-                components: Some(vec![action_row(vec![button(
+        let response = InteractionResponse::update(
+            InteractionResponseData::default()
+                .with_content(text)
+                .with_components(vec![action_row(vec![button(
                     1,
                     "🎲 Reroll",
                     format!("reroll:{}", sides),
                 )])]),
-                ..Default::default()
-            }),
-        };
+        );
 
         http.create_interaction_response(interaction.id, &interaction.token, &response)
             .await?;
     } else if !values.is_empty() {
         let selected = values.join(", ");
         let text = format!("You selected: **{}**", selected);
-        let response = InteractionResponse {
-            kind: InteractionCallbackType::ChannelMessageWithSource,
-            data: Some(InteractionCallbackData {
-                content: Some(text),
-                flags: Some(64), // EPHEMERAL
-                ..Default::default()
-            }),
-        };
+        let response = InteractionResponse::message(
+            InteractionResponseData::default()
+                .with_content(text)
+                .with_flags(MessageFlags::EPHEMERAL),
+        );
         http.create_interaction_response(interaction.id, &interaction.token, &response)
             .await?;
     } else {
@@ -778,22 +748,18 @@ async fn handle_modal_submit(
             .map(|u| u.tag())
             .unwrap_or_else(|| "Unknown".to_string());
 
-        let embed = EmbedBuilder::new()
-            .title(format!("📝 Report: {}", subject))
-            .description(&body)
-            .color(0xFF6600)
-            .footer(format!("Submitted by {}", author_name))
-            .timestamp(chrono::Utc::now().to_rfc3339())
-            .build();
+        let embed = Embed::new()
+            .with_title(format!("📝 Report: {}", subject))
+            .with_description(&body)
+            .with_color(0xFF6600)
+            .with_footer(format!("Submitted by {}", author_name))
+            .with_timestamp(chrono::Utc::now().to_rfc3339());
 
-        let response = InteractionResponse {
-            kind: InteractionCallbackType::ChannelMessageWithSource,
-            data: Some(InteractionCallbackData {
-                content: Some("✅ Report submitted! Thank you.".to_string()),
-                embeds: Some(vec![embed]),
-                ..Default::default()
-            }),
-        };
+        let response = InteractionResponse::message(
+            InteractionResponseData::default()
+                .with_content("✅ Report submitted! Thank you.")
+                .with_embeds(vec![embed]),
+        );
 
         http.create_interaction_response(interaction.id, &interaction.token, &response)
             .await?;
@@ -808,13 +774,7 @@ async fn handle_modal_submit(
 
 /// Shorthand for a simple text interaction response.
 fn text_response(text: impl Into<String>) -> InteractionResponse {
-    InteractionResponse {
-        kind: InteractionCallbackType::ChannelMessageWithSource,
-        data: Some(InteractionCallbackData {
-            content: Some(text.into()),
-            ..Default::default()
-        }),
-    }
+    InteractionResponse::text(text)
 }
 
 // ---------------------------------------------------------------------------
@@ -947,7 +907,7 @@ mod tests {
         let resp = text_response("x");
         assert!(matches!(
             resp.kind,
-            InteractionCallbackType::ChannelMessageWithSource
+            InteractionResponseType::ChannelMessageWithSource
         ));
     }
 

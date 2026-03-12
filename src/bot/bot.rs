@@ -25,7 +25,7 @@ fn on_add(mut world: DeferredWorld, cx: HookContext) {
 
 pub struct DiscordHandlers {
     /// We've successfully identified / resumed — bot is ready.
-    pub on_ready: Tool<ReadyEvent, ()>,
+    pub on_ready: Tool<Ready, ()>,
     /// Full guild object lazily sent after READY.
     pub on_guild_create: Tool<Guild, ()>,
     /// A message was created in a channel we can see.

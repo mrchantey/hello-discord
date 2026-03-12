@@ -9,9 +9,10 @@ use tracing::warn;
 
 use twilight_model::application::interaction::Interaction;
 use twilight_model::channel::message::Message;
+use twilight_model::gateway::payload::incoming::Ready;
 use twilight_model::guild::Guild;
 
-use super::custom::{GatewayPayload, PresenceUpdate, ReadyEvent, UnknownEvent};
+use super::custom::{GatewayPayload, PresenceUpdate, UnknownEvent};
 
 // ---------------------------------------------------------------------------
 // The top-level event enum
@@ -21,7 +22,7 @@ use super::custom::{GatewayPayload, PresenceUpdate, ReadyEvent, UnknownEvent};
 #[derive(Debug, Clone)]
 pub enum GatewayEvent {
     /// We've successfully identified / resumed — bot is ready.
-    Ready(ReadyEvent),
+    Ready(Ready),
 
     /// Full guild object lazily sent after READY.
     GuildCreate(Guild),
@@ -113,7 +114,7 @@ impl GatewayEvent {
         };
 
         match name {
-            "READY" => match serde_json::from_value::<ReadyEvent>(d.clone()) {
+            "READY" => match serde_json::from_value::<Ready>(d.clone()) {
                 Ok(ready) => GatewayEvent::Ready(ready),
                 Err(e) => {
                     warn!(event = name, error = %e, "failed to parse READY payload");

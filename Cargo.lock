@@ -905,6 +905,7 @@ name = "beet_node"
 version = "0.0.9-dev.4"
 dependencies = [
  "beet_core",
+ "beet_net",
  "bevy",
  "bytes",
  "extend",

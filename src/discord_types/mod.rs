@@ -1,5 +1,5 @@
-//! Discord helpers — re-exports from [`twilight_model`] plus our custom types,
-//! builders, and extension traits.
+//! Discord helpers — re-exports from [`twilight_model`] plus our custom types
+//! and extension traits.
 //!
 //! This module replaces the old `discord_types` fork of twilight-model.
 //! Instead of maintaining a full copy of twilight's type definitions, we now
@@ -7,7 +7,7 @@
 //! additions on top.
 
 /// Custom types that don't exist in `twilight-model` (gateway envelope,
-/// outbound message body, interaction response helpers, rate-limit info, etc.)
+/// outbound message body, rate-limit info, etc.)
 mod custom;
 pub use custom::*;
 
@@ -15,17 +15,14 @@ pub use custom::*;
 mod events;
 pub use events::*;
 
-/// Builder patterns for ergonomic type construction.
-pub mod builders;
-
-/// Extension traits for twilight-model types.
+/// Extension traits and helpers for twilight-model types.
 pub mod ext;
 
 // ===========================================================================
 // Re-exports from twilight-model
 // ===========================================================================
 
-// ---- Top-level modules (so code can do `discord_helpers::application::...`) ----
+// ---- Top-level modules (so code can do `discord_types::application::...`) ----
 pub use twilight_model::application;
 pub use twilight_model::channel;
 pub use twilight_model::gateway;
@@ -39,7 +36,7 @@ pub use twilight_model::util;
 pub use twilight_model::voice;
 
 // ===========================================================================
-// Convenience re-exports (flat imports for `use crate::discord_helpers::*`)
+// Convenience re-exports (flat imports for `use crate::discord_types::*`)
 // ===========================================================================
 
 // ---- IDs ------------------------------------------------------------------
@@ -50,7 +47,7 @@ pub use twilight_model::id::marker::{
 pub use twilight_model::id::Id;
 
 // ---- User -----------------------------------------------------------------
-pub use twilight_model::user::User;
+pub use twilight_model::user::{CurrentUser, User};
 
 // ---- Channel / Message ----------------------------------------------------
 pub use twilight_model::channel::message::MessageFlags;
@@ -70,6 +67,7 @@ pub use twilight_model::channel::{
 pub use twilight_model::guild::{Guild, Member, PartialMember, UnavailableGuild};
 
 // ---- Presence / Gateway ---------------------------------------------------
+pub use twilight_model::gateway::payload::incoming::Ready;
 pub use twilight_model::gateway::presence::{Activity, Status};
 
 // ---- Interactions ---------------------------------------------------------
@@ -80,18 +78,17 @@ pub use twilight_model::application::interaction::{
     Interaction, InteractionData, InteractionType,
 };
 
+// ---- Interaction responses (from twilight — no custom duplicates) ----------
+pub use twilight_model::http::interaction::{
+    InteractionResponse, InteractionResponseData, InteractionResponseType,
+};
+
 // ---- Application commands (registration) ----------------------------------
 pub use twilight_model::application::command::CommandOptionType;
 pub use twilight_model::application::command::{
-    Command as ApplicationCommand, CommandOption as ApplicationCommandOption,
+    Command, Command as ApplicationCommand, CommandOption as ApplicationCommandOption,
     CommandOptionChoice as ApplicationCommandOptionChoice, CommandType as ApplicationCommandType,
 };
 
-// ---- Builders (our additions) ---------------------------------------------
-pub use self::builders::{ApplicationCommandBuilder, EmbedBuilder};
-
-// ---- Extension traits (our additions) -------------------------------------
-pub use self::ext::{GuildExt, MessageExt, UserExt};
-
-// ---- Component helpers (our additions) ------------------------------------
-pub use self::builders::{action_row, button, link_button, string_select, text_input};
+// ---- Extension traits & helpers (our additions) ---------------------------
+pub use self::ext::*;
