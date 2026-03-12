@@ -1,57 +1,15 @@
 //! Types that don't exist in twilight-model.
 //!
-//! These are specific to our implementation and cover outbound message bodies,
-//! rate-limit tracking, and simplified presence payloads that twilight handles
-//! differently (via its own gateway crate).
+//! These are specific to our implementation and cover outbound message bodies
+//! and rate-limit tracking. Gateway event types (including presence updates)
+//! are now provided directly by `twilight-model`.
 
 use serde::{Deserialize, Serialize};
 
 use twilight_model::channel::message::component::Component;
 use twilight_model::channel::message::embed::Embed;
-use twilight_model::gateway::presence::Activity;
-use twilight_model::gateway::OpCode;
-use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker, UserMarker};
+use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker};
 use twilight_model::id::Id;
-
-// ---------------------------------------------------------------------------
-// PRESENCE_UPDATE event payload
-// ---------------------------------------------------------------------------
-
-/// A simplified PRESENCE_UPDATE payload.
-///
-/// Twilight's full `Presence` type is in `gateway::presence` and requires
-/// many more fields. Our bot only cares about the user, guild, status, and
-/// activities, so we keep a streamlined version here.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct PresenceUpdate {
-    pub user: PartialUser,
-    pub guild_id: Option<Id<GuildMarker>>,
-    pub status: Option<String>,
-    #[serde(default)]
-    pub activities: Vec<Activity>,
-}
-
-/// An event we received from the gateway that we don't have a typed variant for.
-///
-/// Uses the strongly-typed [`OpCode`] instead of a raw `u8`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct UnknownEvent {
-    pub event_name: Option<String>,
-    pub op: OpCode,
-    pub data: Option<serde_json::Value>,
-}
-
-/// Partial user object received in events like PRESENCE_UPDATE.
-///
-/// Only the `id` is guaranteed; other fields may be absent.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct PartialUser {
-    pub id: Id<UserMarker>,
-    pub username: Option<String>,
-    pub avatar: Option<String>,
-    #[serde(default)]
-    pub bot: bool,
-}
 
 // ---------------------------------------------------------------------------
 // Outbound message body (for REST POST /channels/{id}/messages)
@@ -176,15 +134,5 @@ mod tests {
         assert!(!json.contains("embeds"));
         assert!(!json.contains("components"));
         assert!(!json.contains("flags"));
-    }
-
-    #[test]
-    fn unknown_event_uses_opcode() {
-        let event = UnknownEvent {
-            event_name: Some("SOME_EVENT".into()),
-            op: OpCode::Dispatch,
-            data: None,
-        };
-        assert_eq!(event.op, OpCode::Dispatch);
     }
 }

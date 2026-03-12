@@ -13,6 +13,8 @@ use tracing::{error, info, warn};
 use crate::discord_io::bot::{BotState, GreetState};
 use crate::discord_io::http::DiscordHttpClient;
 use crate::discord_types::*;
+use twilight_model::gateway::payload::incoming::{GuildCreate, PresenceUpdate};
+use twilight_model::gateway::presence::{Status, UserOrId};
 
 // ---------------------------------------------------------------------------
 // Slash command definitions
@@ -88,8 +90,17 @@ pub async fn on_ready(world: &AsyncWorld, http: &DiscordHttpClient, ready: Ready
 /// Called when we receive a full guild object after READY.
 ///
 /// Picks the first text channel as the greeting channel if one hasn't been
-/// set yet.
-pub async fn on_guild_create(world: &AsyncWorld, guild: Guild) {
+/// set yet. Accepts the twilight [`GuildCreate`](GuildCreate) enum which
+/// may be `Available(Guild)` or `Unavailable(UnavailableGuild)`.
+pub async fn on_guild_create(world: &AsyncWorld, guild_create: &GuildCreate) {
+    let guild = match guild_create {
+        GuildCreate::Available(g) => g,
+        GuildCreate::Unavailable(ug) => {
+            info!(guild_id = %ug.id, "received unavailable guild");
+            return;
+        }
+    };
+
     let has_greet_channel = world
         .with_resource_then::<GreetState, _>(|state| state.greet_channel_id.is_some())
         .await;
@@ -121,18 +132,21 @@ pub async fn on_guild_create(world: &AsyncWorld, guild: Guild) {
 /// Called when a user's presence changes.
 ///
 /// Sends a one-time greeting when a user comes online for the first time
-/// this session.
+/// this session. Accepts the twilight [`PresenceUpdate`](PresenceUpdate)
+/// payload which wraps a [`Presence`](twilight_model::gateway::presence::Presence).
 pub async fn on_presence_update(
     world: &AsyncWorld,
     http: &DiscordHttpClient,
-    presence: PresenceUpdate,
+    presence: &PresenceUpdate,
 ) {
-    let status = presence.status.as_deref().unwrap_or("offline");
-    if status != "online" {
+    if presence.status != Status::Online {
         return;
     }
 
-    let user_id = presence.user.id;
+    let user_id = match &presence.user {
+        UserOrId::User(u) => u.id,
+        UserOrId::UserId { id } => *id,
+    };
 
     // Check whether this is the bot itself and whether we've already greeted.
     let is_self = world

@@ -10,16 +10,17 @@
 
 #[cfg(feature = "io")]
 pub mod bot;
-pub mod discord_types;
 #[cfg(feature = "io")]
 pub mod discord_io;
+pub mod discord_types;
 pub mod tl_gateway;
+pub mod tw_http;
 
 pub mod prelude {
     #[cfg(feature = "io")]
     pub use crate::bot::*;
-    pub use crate::discord_types::*;
     #[cfg(feature = "io")]
     pub use crate::discord_io;
+    pub use crate::discord_types::*;
     pub use crate::tl_gateway::*;
 }

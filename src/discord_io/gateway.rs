@@ -25,8 +25,10 @@ use futures_lite::future::race;
 use serde_json::json;
 use tracing::{debug, error, info, warn};
 
-use crate::discord_types::GatewayEvent;
-use crate::tl_gateway::{CloseAction, GatewayPayload, Intents, OpCode};
+use crate::tl_gateway::{
+    parse_gateway_event, CloseAction, DispatchEvent, GatewayPayload, Intents, OpCode,
+    GatewayEvent,
+};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -504,26 +506,26 @@ async fn read_loop(
 
                 match msg {
                     Message::Text(text) => {
-                        let payload: GatewayPayload =
-                            match serde_json::from_str::<GatewayPayload>(&text) {
-                                Ok(p) => p,
-                                Err(e) => {
-                                    warn!(error = %e, "failed to parse gateway payload");
-                                    continue;
-                                }
-                            };
-
-                        // Update sequence number.
-                        if let Some(s) = payload.s {
-                            let mut sess = session.lock().await;
-                            sess.sequence = Some(s);
+                        // Pre-parse to extract sequence number before full deser.
+                        // We still need the raw payload for sequence tracking.
+                        if let Ok(envelope) = serde_json::from_str::<GatewayPayload>(&text) {
+                            if let Some(s) = envelope.s {
+                                let mut sess = session.lock().await;
+                                sess.sequence = Some(s);
+                            }
                         }
 
-                        let event = GatewayEvent::from_payload(payload);
+                        let event = match parse_gateway_event(&text) {
+                            Ok(ev) => ev,
+                            Err(e) => {
+                                warn!(error = %e, "failed to parse gateway event");
+                                continue;
+                            }
+                        };
 
                         // Handle session-relevant events internally.
                         match &event {
-                            GatewayEvent::Ready(ready) => {
+                            GatewayEvent::Dispatch(_, DispatchEvent::Ready(ready)) => {
                                 let mut sess = session.lock().await;
                                 sess.session_id = Some(ready.session_id.clone());
                                 sess.resume_gateway_url = Some(ready.resume_gateway_url.clone());
@@ -534,8 +536,8 @@ async fn read_loop(
                                 );
                             }
 
-                            GatewayEvent::HeartbeatRequest => {
-                                // Respond with an immediate heartbeat.
+                            GatewayEvent::Heartbeat => {
+                                // Discord is asking us to heartbeat immediately (op 1).
                                 let seq = {
                                     let s = session.lock().await;
                                     s.sequence
@@ -560,7 +562,7 @@ async fn read_loop(
                                 return DisconnectReason::ShouldResume;
                             }
 
-                            GatewayEvent::InvalidSession(resumable) => {
+                            GatewayEvent::InvalidateSession(resumable) => {
                                 warn!(resumable, "session invalidated (op 9)");
                                 if *resumable {
                                     time_ext::sleep(Duration::from_secs(2)).await;
@@ -571,9 +573,13 @@ async fn read_loop(
                                 }
                             }
 
-                            ev => {
-                                debug!(event = ?ev, "unhandled gateway event");
+                            GatewayEvent::Hello(_) => {
+                                // Hello is handled earlier in the connection setup;
+                                // if we see it here it's unexpected but harmless.
+                                debug!("unexpected HELLO in read loop");
                             }
+
+                            _ => {}
                         }
 
                         // Forward to bot.

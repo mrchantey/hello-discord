@@ -12,7 +12,7 @@ use crate::discord_io::gateway::{self, GatewayConfig};
 use crate::discord_io::handlers;
 use crate::discord_io::http::DiscordHttpClient;
 use crate::discord_types::*;
-use crate::tl_gateway::Intents;
+use crate::tl_gateway::{DispatchEvent, Intents, GatewayEvent};
 
 /// Core bot identity and lifecycle state.
 #[derive(Resource)]
@@ -107,46 +107,48 @@ pub async fn start_gateway_listener(entity: AsyncEntity) -> Result {
         trace!("Event Received: {event:#?}");
 
         match event {
-            GatewayEvent::Ready(ready) => {
-                handlers::on_ready(&world, &http, ready).await;
-            }
-
-            GatewayEvent::GuildCreate(guild) => {
-                handlers::on_guild_create(&world, guild).await;
-            }
-
-            GatewayEvent::PresenceUpdate(presence) => {
-                handlers::on_presence_update(&world, &http, presence).await;
-            }
-
-            GatewayEvent::MessageCreate(msg) => {
-                if msg.author.bot {
-                    continue;
+            GatewayEvent::Dispatch(_, ref dispatch) => match dispatch {
+                DispatchEvent::Ready(ready) => {
+                    handlers::on_ready(&world, &http, ready.clone()).await;
                 }
-                handlers::on_message(&world, &http, msg).await;
-            }
 
-            GatewayEvent::InteractionCreate(interaction) => {
-                if let Err(e) = handlers::on_interaction(&world, &http, &interaction).await {
-                    error!(error = %e, "failed to handle interaction");
+                DispatchEvent::GuildCreate(guild_create) => {
+                    handlers::on_guild_create(&world, guild_create).await;
                 }
-            }
+
+                DispatchEvent::PresenceUpdate(presence) => {
+                    handlers::on_presence_update(&world, &http, presence).await;
+                }
+
+                DispatchEvent::MessageCreate(msg) => {
+                    if msg.author.bot {
+                        continue;
+                    }
+                    handlers::on_message(&world, &http, msg.0.clone()).await;
+                }
+
+                DispatchEvent::InteractionCreate(interaction) => {
+                    if let Err(e) = handlers::on_interaction(&world, &http, &interaction.0).await {
+                        error!(error = %e, "failed to handle interaction");
+                    }
+                }
+
+                other => {
+                    tracing::trace!(event = ?other, "unhandled dispatch event");
+                }
+            },
 
             // Heartbeat ACK — already logged at debug level in gateway module.
             GatewayEvent::HeartbeatAck => {}
 
             // Reconnect / InvalidSession are handled internally by the gateway driver.
-            GatewayEvent::Reconnect | GatewayEvent::InvalidSession(_) => {}
+            GatewayEvent::Reconnect | GatewayEvent::InvalidateSession(_) => {}
 
-            GatewayEvent::HeartbeatRequest => {}
+            // Heartbeat request — handled by the gateway driver.
+            GatewayEvent::Heartbeat => {}
 
-            GatewayEvent::Unknown(UnknownEvent {
-                event_name: Some(ref name),
-                ..
-            }) => {
-                tracing::trace!(event = %name, "unhandled gateway event");
-            }
-            _ => {}
+            // Hello — handled during connection setup.
+            GatewayEvent::Hello(_) => {}
         }
     }
 

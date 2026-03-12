@@ -1,8 +1,8 @@
 use crate::discord_io::bot::start_gateway_listener;
+use crate::discord_types::Message as DiscordMessage;
 use crate::prelude::*;
 use beet::prelude::*;
-
-use crate::discord_types::Message as DiscordMessage;
+use twilight_model::gateway::payload::incoming::PresenceUpdate;
 
 pub fn default_bot() -> impl Bundle {}
 
@@ -31,6 +31,7 @@ pub struct DiscordHandlers {
     /// A message was created in a channel we can see.
     pub on_message_create: Tool<DiscordMessage, ()>,
     /// A user's presence (online/idle/dnd/offline) changed.
+    /// Uses twilight-model's [`PresenceUpdate`](PresenceUpdate) payload.
     pub on_presence_update: Tool<PresenceUpdate, ()>,
     /// An interaction was created (slash command, button, select, modal submit).
     pub on_interaction_create: Tool<Interaction, ()>,
@@ -42,8 +43,6 @@ pub struct DiscordHandlers {
     pub on_reconnect: Tool<(), ()>,
     /// Session has been invalidated (op 9).
     pub on_invalid_session: Tool<bool, ()>,
-    /// An event we received but don't have a typed variant for yet.
-    pub on_unknown: Tool<UnknownEvent, ()>,
 }
 
 fn log_event<T: std::fmt::Debug>(value: FuncToolIn<T>) -> Result {
@@ -64,7 +63,6 @@ impl Default for DiscordHandlers {
             on_heartbeat_request: func_tool(log_event),
             on_reconnect: func_tool(log_event),
             on_invalid_session: func_tool(log_event),
-            on_unknown: func_tool(log_event),
         }
     }
 }

@@ -7,13 +7,9 @@
 //! additions on top.
 
 /// Custom types that don't exist in `twilight-model` (outbound message body,
-/// rate-limit info, simplified presence, etc.)
+/// rate-limit info, etc.)
 mod custom;
 pub use custom::*;
-
-/// Typed gateway events and dispatch parsing.
-mod events;
-pub use events::*;
 
 /// Extension traits and helpers for twilight-model types.
 pub mod ext;
