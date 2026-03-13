@@ -23,6 +23,7 @@
 
 #[cfg(feature = "io")]
 pub mod bot;
+pub mod common_handlers;
 #[cfg(feature = "io")]
 pub mod discord_io;
 pub mod discord_types;
@@ -32,6 +33,7 @@ pub mod tw_http;
 pub mod prelude {
 	#[cfg(feature = "io")]
 	pub use crate::bot::*;
+	pub use crate::common_handlers;
 	#[cfg(feature = "io")]
 	pub use crate::discord_io::*;
 	pub use crate::discord_types::*;

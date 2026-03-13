@@ -1,12 +1,2 @@
 mod bot;
-mod on_guild_create;
-mod on_interaction;
-mod on_message;
-mod on_presence_update;
-mod on_ready;
 pub use bot::*;
-pub use on_guild_create::*;
-pub use on_interaction::*;
-pub use on_message::*;
-pub use on_presence_update::*;
-pub use on_ready::*;
