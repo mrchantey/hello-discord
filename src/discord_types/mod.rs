@@ -12,6 +12,7 @@
 /// rate-limit info, etc.)
 mod custom;
 pub use custom::*;
-pub mod events;
+mod events;
+pub use events::*;
 mod ext;
 pub use ext::*;

@@ -1,7 +1,7 @@
 //! Event handlers for the Discord bot.
 //!
 //! Each public function in this module handles one category of gateway event.
-//! Handlers receive an [`AsyncWorld`] for reading/writing Bevy [`Resource`]s
+//! Handlers receive an [`AsyncEntity`] for reading/writing Bevy [`Component`]s
 //! and a [`DiscordHttpClient`] for calling the Discord REST API.
 //!
 //! This module also contains slash-command definitions and small formatting
@@ -10,8 +10,9 @@
 use crate::discord_io::gateway_listener::BotState;
 use crate::discord_io::gateway_listener::GreetState;
 use crate::discord_io::http::DiscordHttpClient;
-use crate::discord_types::*;
-use beet::prelude::AsyncWorld;
+use crate::discord_types::CommandExt;
+use crate::prelude::*;
+use beet::prelude::*;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
@@ -76,23 +77,23 @@ pub fn slash_commands() -> Vec<Command> {
 /// Stores identity information in [`BotState`] and registers slash commands
 /// globally (once per session).
 pub async fn on_ready(
-	world: &AsyncWorld,
+	entity: &AsyncEntity,
 	http: &DiscordHttpClient,
 	ready: Ready,
-) {
+) -> Result {
 	info!(user = %ready.user.tag(), guilds = ready.guilds.len(), "bot is ready!");
 
 	let bot_user_id = ready.user.id;
 	let app_id = ready.application.id;
 
 	// Store identity in BotState, and check whether commands are already registered.
-	let already_registered = world
-		.with_resource_then::<BotState, _>(move |mut state| {
+	let already_registered = entity
+		.get_mut::<BotState, _>(move |mut state| {
 			state.bot_user_id = Some(bot_user_id);
 			state.application_id = Some(app_id);
 			state.commands_registered
 		})
-		.await;
+		.await?;
 
 	if !already_registered {
 		let cmds = slash_commands();
@@ -102,15 +103,18 @@ pub async fn on_ready(
 					count = registered.len(),
 					"registered global slash commands"
 				);
-				world.with_resource::<BotState>(|mut state| {
-					state.commands_registered = true;
-				});
+				entity
+					.get_mut::<BotState, _>(|mut state| {
+						state.commands_registered = true;
+					})
+					.await?;
 			}
 			Err(e) => {
 				warn!(error = %e, "failed to register global commands");
 			}
 		}
 	}
+	Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +126,7 @@ pub async fn on_ready(
 /// Picks the first text channel as the greeting channel if one hasn't been
 /// set yet. Accepts the twilight [`GuildCreate`](GuildCreate) enum which
 /// may be `Available(Guild)` or `Unavailable(UnavailableGuild)`.
-pub async fn on_guild_create(world: &AsyncWorld, guild_create: &GuildCreate) {
+pub async fn on_guild_create(entity: &AsyncEntity, guild_create: &GuildCreate) {
 	let guild = match guild_create {
 		GuildCreate::Available(g) => g,
 		GuildCreate::Unavailable(ug) => {
@@ -131,11 +135,10 @@ pub async fn on_guild_create(world: &AsyncWorld, guild_create: &GuildCreate) {
 		}
 	};
 
-	let has_greet_channel = world
-		.with_resource_then::<GreetState, _>(|state| {
-			state.greet_channel_id.is_some()
-		})
-		.await;
+	let has_greet_channel = entity
+		.get::<GreetState, _>(|state| state.greet_channel_id.is_some())
+		.await
+		.unwrap_or(false);
 
 	if !has_greet_channel {
 		if let Some(ch) = guild
@@ -146,14 +149,16 @@ pub async fn on_guild_create(world: &AsyncWorld, guild_create: &GuildCreate) {
 			let channel_id = ch.id;
 			let channel_name =
 				ch.name.clone().unwrap_or_else(|| "?".to_string());
-			world.with_resource::<GreetState>(move |mut state| {
-				info!(
-					channel = %channel_name,
-					channel_id = %channel_id,
-					"greeting channel set"
-				);
-				state.greet_channel_id = Some(channel_id);
-			});
+			let _ = entity
+				.get_mut::<GreetState, _>(move |mut state| {
+					info!(
+						channel = %channel_name,
+						channel_id = %channel_id,
+						"greeting channel set"
+					);
+					state.greet_channel_id = Some(channel_id);
+				})
+				.await;
 		}
 	}
 }
@@ -168,7 +173,7 @@ pub async fn on_guild_create(world: &AsyncWorld, guild_create: &GuildCreate) {
 /// this session. Accepts the twilight [`PresenceUpdate`](PresenceUpdate)
 /// payload which wraps a [`Presence`](twilight_model::gateway::presence::Presence).
 pub async fn on_presence_update(
-	world: &AsyncWorld,
+	entity: &AsyncEntity,
 	http: &DiscordHttpClient,
 	presence: &PresenceUpdate,
 ) {
@@ -182,32 +187,34 @@ pub async fn on_presence_update(
 	};
 
 	// Check whether this is the bot itself and whether we've already greeted.
-	let is_self = world
-		.with_resource_then::<BotState, _>(move |state| {
-			state.bot_user_id == Some(user_id)
-		})
-		.await;
+	let is_self = entity
+		.get::<BotState, _>(move |state| state.bot_user_id == Some(user_id))
+		.await
+		.unwrap_or(false);
 
 	if is_self {
 		return;
 	}
 
-	// Now check GreetState (separate resource access to keep borrows clean).
-	let (already_greeted, greet_channel) = world
-		.with_resource_then::<GreetState, _>(move |state| {
+	// Now check GreetState (separate component access to keep borrows clean).
+	let (already_greeted, greet_channel) = entity
+		.get::<GreetState, _>(move |state| {
 			let already = state.greeted_users.contains(&user_id);
 			(already, state.greet_channel_id)
 		})
-		.await;
+		.await
+		.unwrap_or((false, None));
 
 	if already_greeted {
 		return;
 	}
 
 	// Mark as greeted.
-	world.with_resource::<GreetState>(move |mut state| {
-		state.greeted_users.insert(user_id);
-	});
+	let _ = entity
+		.get_mut::<GreetState, _>(move |mut state| {
+			state.greeted_users.insert(user_id);
+		})
+		.await;
 
 	if let Some(ch_id) = greet_channel {
 		let greeting = format!(
@@ -228,7 +235,7 @@ pub async fn on_presence_update(
 ///
 /// Handles `!` prefix commands and @-mention commands.
 pub async fn on_message(
-	world: &AsyncWorld,
+	entity: &AsyncEntity,
 	http: &DiscordHttpClient,
 	msg: Message,
 ) {
@@ -242,20 +249,21 @@ pub async fn on_message(
 
 	// Update greet channel if not yet set.
 	let channel_id = msg.channel_id;
-	world.with_resource::<GreetState>(move |mut state| {
-		if state.greet_channel_id.is_none() {
-			state.greet_channel_id = Some(channel_id);
-		}
-	});
+	let _ = entity
+		.get_mut::<GreetState, _>(move |mut state| {
+			if state.greet_channel_id.is_none() {
+				state.greet_channel_id = Some(channel_id);
+			}
+		})
+		.await;
 
 	let content = msg.content.trim();
 
 	// Read bot_user_id + start_time from BotState.
-	let (bot_user_id, start_time) = world
-		.with_resource_then::<BotState, _>(|state| {
-			(state.bot_user_id, state.start_time)
-		})
-		.await;
+	let (bot_user_id, start_time) = entity
+		.get::<BotState, _>(|state| (state.bot_user_id, state.start_time))
+		.await
+		.unwrap_or((None, std::time::Instant::now()));
 
 	// Determine effective command text from @mention or ! prefix.
 	let effective_content = if let Some(bid) = bot_user_id {
@@ -454,13 +462,13 @@ pub async fn on_message(
 
 /// Top-level interaction dispatcher.
 pub async fn on_interaction(
-	world: &AsyncWorld,
+	entity: &AsyncEntity,
 	http: &DiscordHttpClient,
 	interaction: &Interaction,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	match interaction.kind {
 		InteractionType::ApplicationCommand => {
-			handle_slash_command(world, http, interaction).await
+			handle_slash_command(entity, http, interaction).await
 		}
 		InteractionType::MessageComponent => {
 			handle_component(http, interaction).await
@@ -514,16 +522,17 @@ fn get_option_u64(options: &[CommandDataOption], name: &str) -> Option<u64> {
 }
 
 async fn handle_slash_command(
-	world: &AsyncWorld,
+	entity: &AsyncEntity,
 	http: &DiscordHttpClient,
 	interaction: &Interaction,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let (name, options) =
 		command_info(interaction).ok_or("missing interaction data")?;
 
-	let start_time = world
-		.with_resource_then::<BotState, _>(|state| state.start_time)
-		.await;
+	let start_time = entity
+		.get::<BotState, _>(|state| state.start_time)
+		.await
+		.unwrap_or_else(|_| std::time::Instant::now());
 
 	let response = match name {
 		"ping" => text_response("🏓 Pong!"),

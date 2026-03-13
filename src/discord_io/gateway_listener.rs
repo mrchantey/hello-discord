@@ -8,7 +8,6 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
-use beet::prelude::*;
 use crate::discord_io::gateway::GatewayConfig;
 use crate::discord_io::gateway::{
 	self,
@@ -16,6 +15,7 @@ use crate::discord_io::gateway::{
 use crate::discord_io::handlers;
 use crate::discord_io::http::DiscordHttpClient;
 use crate::prelude::*;
+use beet::prelude::*;
 use twilight_model::gateway::event::DispatchEvent;
 use twilight_model::gateway::event::GatewayEvent;
 use twilight_model::gateway::Intents;
@@ -25,7 +25,7 @@ use twilight_model::id::marker::UserMarker;
 use twilight_model::id::Id;
 
 /// Core bot identity and lifecycle state.
-#[derive(Resource)]
+#[derive(Component)]
 pub struct BotState {
 	/// The bot's own user ID (set on READY).
 	pub bot_user_id: Option<Id<UserMarker>>,
@@ -49,7 +49,7 @@ impl Default for BotState {
 }
 
 /// State for the "greet users who come online" feature.
-#[derive(Resource, Default)]
+#[derive(Component, Default)]
 pub struct GreetState {
 	/// Channel to send greeting messages in.
 	pub greet_channel_id: Option<Id<ChannelMarker>>,
@@ -87,14 +87,7 @@ pub async fn start_gateway_listener(entity: AsyncEntity) -> Result {
 
 	// Create the HTTP client (cheap to clone — Arc internals).
 	let http = DiscordHttpClient::new(&token);
-
-	entity
-		.world()
-		.with_then(|world| {
-			world.insert_resource(BotState::default());
-			world.insert_resource(GreetState::default());
-		})
-		.await;
+	entity.insert_then(http.clone()).await;
 
 	// Insert state into the Bevy world as Resources.
 
@@ -112,8 +105,6 @@ pub async fn start_gateway_listener(entity: AsyncEntity) -> Result {
 
 	info!("gateway connected, entering event loop");
 
-	let world = entity.world().clone();
-
 	// ----- Main event loop -----
 	while let Ok(event) = gw.events.recv().await {
 		trace!("Event Received: {event:#?}");
@@ -121,27 +112,33 @@ pub async fn start_gateway_listener(entity: AsyncEntity) -> Result {
 		match event {
 			GatewayEvent::Dispatch(_, ref dispatch) => match dispatch {
 				DispatchEvent::Ready(ready) => {
-					handlers::on_ready(&world, &http, ready.clone()).await;
+					entity.trigger(DiscordReady::create(ready.clone()));
+					if let Err(e) =
+						handlers::on_ready(&entity, &http, ready.clone()).await
+					{
+						error!(error = %e, "failed to handle ready event");
+					}
 				}
 
 				DispatchEvent::GuildCreate(guild_create) => {
-					handlers::on_guild_create(&world, guild_create).await;
+					handlers::on_guild_create(&entity, guild_create).await;
 				}
 
 				DispatchEvent::PresenceUpdate(presence) => {
-					handlers::on_presence_update(&world, &http, presence).await;
+					handlers::on_presence_update(&entity, &http, presence)
+						.await;
 				}
 
 				DispatchEvent::MessageCreate(msg) => {
 					if msg.author.bot {
 						continue;
 					}
-					handlers::on_message(&world, &http, msg.0.clone()).await;
+					handlers::on_message(&entity, &http, msg.0.clone()).await;
 				}
 
 				DispatchEvent::InteractionCreate(interaction) => {
 					if let Err(e) =
-						handlers::on_interaction(&world, &http, &interaction.0)
+						handlers::on_interaction(&entity, &http, &interaction.0)
 							.await
 					{
 						error!(error = %e, "failed to handle interaction");

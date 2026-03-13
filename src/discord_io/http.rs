@@ -199,7 +199,7 @@ impl std::error::Error for HttpError {}
 /// A thin, rate-limit–aware HTTP client for the Discord REST API.
 ///
 /// Cheap to clone (internals are behind `Arc`).
-#[derive(Clone)]
+#[derive(Clone, Component)]
 pub struct DiscordHttpClient {
 	token: String,
 	limiter: Arc<Mutex<RateLimiter>>,
