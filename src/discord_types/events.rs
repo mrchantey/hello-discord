@@ -12,3 +12,8 @@ impl DiscordReady {
 		move |entity| Self { entity, ready }
 	}
 }
+
+impl std::ops::Deref for DiscordReady {
+	type Target = Ready;
+	fn deref(&self) -> &Self::Target { &self.ready }
+}

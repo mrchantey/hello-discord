@@ -10,13 +10,11 @@
 use crate::discord_io::gateway_listener::BotState;
 use crate::discord_io::gateway_listener::GreetState;
 use crate::discord_io::http::DiscordHttpClient;
-use crate::discord_types::CommandExt;
 use crate::prelude::*;
 use beet::prelude::*;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
-use twilight_model::application::command::Command;
 use twilight_model::application::interaction::application_command::CommandDataOption;
 use twilight_model::application::interaction::application_command::CommandOptionValue;
 use twilight_model::application::interaction::Interaction;
@@ -29,7 +27,6 @@ use twilight_model::channel::message::MessageFlags;
 use twilight_model::channel::ChannelType;
 use twilight_model::gateway::payload::incoming::GuildCreate;
 use twilight_model::gateway::payload::incoming::PresenceUpdate;
-use twilight_model::gateway::payload::incoming::Ready;
 use twilight_model::gateway::presence::Status;
 use twilight_model::gateway::presence::UserOrId;
 use twilight_model::guild::Guild;
@@ -188,7 +185,7 @@ pub async fn on_presence_update(
 
 	// Check whether this is the bot itself and whether we've already greeted.
 	let is_self = entity
-		.get::<BotState, _>(move |state| state.bot_user_id == Some(user_id))
+		.get::<BotState, _>(move |state| state.bot_user_id() == user_id)
 		.await
 		.unwrap_or(false);
 
@@ -261,14 +258,14 @@ pub async fn on_message(
 
 	// Read bot_user_id + start_time from BotState.
 	let (bot_user_id, start_time) = entity
-		.get::<BotState, _>(|state| (state.bot_user_id, state.start_time))
+		.get::<BotState, _>(|state| (state.bot_user_id(), state.start_time()))
 		.await
-		.unwrap_or((None, std::time::Instant::now()));
+		.unwrap();
 
 	// Determine effective command text from @mention or ! prefix.
-	let effective_content = if let Some(bid) = bot_user_id {
-		let mention_tag = format!("<@{}>", bid);
-		let mention_tag_nick = format!("<@!{}>", bid);
+	let effective_content = {
+		let mention_tag = format!("<@{}>", bot_user_id);
+		let mention_tag_nick = format!("<@!{}>", bot_user_id);
 		if content.starts_with(&mention_tag) {
 			content
 				.strip_prefix(&mention_tag)
@@ -281,13 +278,11 @@ pub async fn on_message(
 				.unwrap_or("")
 				.trim()
 				.to_string()
-		} else if msg.mentions_user(bid) {
+		} else if msg.mentions_user(bot_user_id) {
 			String::new()
 		} else {
 			String::new()
 		}
-	} else {
-		String::new()
 	};
 
 	let command_text = if content.starts_with('!') {
@@ -530,9 +525,9 @@ async fn handle_slash_command(
 		command_info(interaction).ok_or("missing interaction data")?;
 
 	let start_time = entity
-		.get::<BotState, _>(|state| state.start_time)
+		.get::<BotState, _>(|state| state.start_time())
 		.await
-		.unwrap_or_else(|_| std::time::Instant::now());
+		.unwrap();
 
 	let response = match name {
 		"ping" => text_response("🏓 Pong!"),
@@ -992,44 +987,6 @@ mod tests {
 	use twilight_model::http::interaction::InteractionResponseType;
 
 	// -- slash_commands() --------------------------------------------------
-
-	#[test]
-	fn slash_commands_returns_expected_count() {
-		let cmds = slash_commands();
-		assert_eq!(cmds.len(), 11);
-	}
-
-	#[test]
-	fn slash_commands_names_are_unique() {
-		let cmds = slash_commands();
-		let mut names: Vec<&str> =
-			cmds.iter().map(|c| c.name.as_str()).collect();
-		names.sort();
-		names.dedup();
-		assert_eq!(names.len(), cmds.len(), "duplicate command names found");
-	}
-
-	#[test]
-	fn slash_commands_all_have_descriptions() {
-		for cmd in slash_commands() {
-			assert!(
-				!cmd.description.is_empty(),
-				"command '{}' has empty description",
-				cmd.name
-			);
-		}
-	}
-
-	#[test]
-	fn roll_command_has_sides_option() {
-		let cmds = slash_commands();
-		let roll = cmds.iter().find(|c| c.name == "roll").expect("no /roll");
-		assert_eq!(roll.options.len(), 1);
-		assert_eq!(roll.options[0].name, "sides");
-		assert!(matches!(roll.options[0].kind, CommandOptionType::Integer));
-		assert_eq!(roll.options[0].required, Some(false));
-	}
-
 	// -- text_response() ---------------------------------------------------
 
 	#[test]
@@ -1160,18 +1117,6 @@ mod tests {
 			"!help",
 		] {
 			assert!(text.contains(cmd), "help text missing {}", cmd);
-		}
-	}
-
-	#[test]
-	fn help_text_mentions_all_slash_commands() {
-		let text = help_text();
-		for name in slash_commands().iter().map(|c| c.name.as_str()) {
-			assert!(
-				text.contains(&format!("/{}", name)),
-				"help text missing /{}",
-				name
-			);
 		}
 	}
 }

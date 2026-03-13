@@ -5,17 +5,10 @@
 //! lives in Bevy [`Resource`]s accessed through [`AsyncWorld`], so no manual
 //! mutexes are needed in the bot layer.
 
-use std::collections::HashSet;
-use std::time::Instant;
-
-use crate::discord_io::gateway::GatewayConfig;
-use crate::discord_io::gateway::{
-	self,
-};
-use crate::discord_io::handlers;
-use crate::discord_io::http::DiscordHttpClient;
 use crate::prelude::*;
 use beet::prelude::*;
+use std::collections::HashSet;
+use std::time::Instant;
 use twilight_model::gateway::event::DispatchEvent;
 use twilight_model::gateway::event::GatewayEvent;
 use twilight_model::gateway::Intents;
@@ -28,26 +21,30 @@ use twilight_model::id::Id;
 #[derive(Component)]
 pub struct BotState {
 	/// The bot's own user ID (set on READY).
-	pub bot_user_id: Option<Id<UserMarker>>,
+	bot_user_id: Id<UserMarker>,
 	/// The application ID (set on READY).
-	pub application_id: Option<Id<ApplicationMarker>>,
-	/// Whether slash commands have been registered this session.
-	pub commands_registered: bool,
+	application_id: Id<ApplicationMarker>,
 	/// Timestamp of when the bot started.
-	pub start_time: Instant,
+	start_time: Instant,
 }
 
-impl Default for BotState {
-	fn default() -> Self {
+impl BotState {
+	pub fn new(
+		bot_user_id: Id<UserMarker>,
+		application_id: Id<ApplicationMarker>,
+	) -> Self {
 		Self {
-			bot_user_id: None,
-			application_id: None,
-			commands_registered: false,
+			bot_user_id,
+			application_id,
 			start_time: Instant::now(),
 		}
 	}
+	pub fn bot_user_id(&self) -> Id<UserMarker> { self.bot_user_id }
+	pub fn application_id(&self) -> Id<ApplicationMarker> {
+		self.application_id
+	}
+	pub fn start_time(&self) -> Instant { self.start_time }
 }
-
 /// State for the "greet users who come online" feature.
 #[derive(Component, Default)]
 pub struct GreetState {
@@ -92,13 +89,14 @@ pub async fn start_gateway_listener(entity: AsyncEntity) -> Result {
 	// Insert state into the Bevy world as Resources.
 
 	// Connect to the Discord gateway.
-	let config = GatewayConfig {
+	let gw = GatewayConfig {
 		token,
 		intents: gateway_intents(),
 		shard: None, // single-shard
-	};
-
-	let gw = gateway::connect(config).await.map_err(|e| {
+	}
+	.connect()
+	.await
+	.map_err(|e| {
 		error!(error = %e, "failed to start gateway");
 		e
 	})?;
@@ -113,11 +111,6 @@ pub async fn start_gateway_listener(entity: AsyncEntity) -> Result {
 			GatewayEvent::Dispatch(_, ref dispatch) => match dispatch {
 				DispatchEvent::Ready(ready) => {
 					entity.trigger(DiscordReady::create(ready.clone()));
-					if let Err(e) =
-						handlers::on_ready(&entity, &http, ready.clone()).await
-					{
-						error!(error = %e, "failed to handle ready event");
-					}
 				}
 
 				DispatchEvent::GuildCreate(guild_create) => {
@@ -175,42 +168,6 @@ pub async fn start_gateway_listener(entity: AsyncEntity) -> Result {
 #[cfg(test)]
 mod tests {
 	use super::*;
-
-	// -- BotState ----------------------------------------------------------
-
-	#[test]
-	fn bot_state_default_has_no_identity() {
-		let state = BotState::default();
-		assert!(state.bot_user_id.is_none());
-		assert!(state.application_id.is_none());
-		assert!(!state.commands_registered);
-	}
-
-	#[test]
-	fn bot_state_start_time_is_recent() {
-		let before = Instant::now();
-		let state = BotState::default();
-		let after = Instant::now();
-		assert!(state.start_time >= before);
-		assert!(state.start_time <= after);
-	}
-
-	#[test]
-	fn bot_state_tracks_identity() {
-		let mut state = BotState::default();
-		state.bot_user_id = Some(Id::new(12345));
-		state.application_id = Some(Id::new(67890));
-		assert_eq!(state.bot_user_id.map(|id| id.get()), Some(12345));
-		assert_eq!(state.application_id.map(|id| id.get()), Some(67890));
-	}
-
-	#[test]
-	fn bot_state_commands_registered_flag() {
-		let mut state = BotState::default();
-		assert!(!state.commands_registered);
-		state.commands_registered = true;
-		assert!(state.commands_registered);
-	}
 
 	// -- GreetState --------------------------------------------------------
 

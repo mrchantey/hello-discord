@@ -33,13 +33,7 @@ pub mod prelude {
 	#[cfg(feature = "io")]
 	pub use crate::bot::*;
 	#[cfg(feature = "io")]
-	pub use crate::discord_io;
-	#[cfg(feature = "io")]
-	pub use crate::discord_io::gateway_listener::BotState;
-	#[cfg(feature = "io")]
-	pub use crate::discord_io::gateway_listener::GreetState;
-	#[cfg(feature = "io")]
-	pub use crate::discord_io::http::DiscordHttpClient;
+	pub use crate::discord_io::*;
 	pub use crate::discord_types::*;
 	pub use crate::tw_gateway::*;
 	pub use crate::tw_http::*;

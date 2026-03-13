@@ -1,4 +1,4 @@
-use crate::discord_io::gateway_listener::start_gateway_listener;
+use crate::prelude::*;
 use beet::prelude::*;
 
 pub fn default_bot() -> impl Bundle {}

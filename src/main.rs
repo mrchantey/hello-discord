@@ -21,16 +21,6 @@ fn main() {
 /// Startup system that spawns the discord bot.
 fn spawn_bot(mut commands: Commands) {
 	commands
-		.spawn((
-			DiscordBot::default(),
-			BotState::default(),
-			GreetState::default(),
-		))
-		.observe(|ev: On<DiscordReady>, mut commands: AsyncCommands| {
-			let entity = ev.event_target();
-			commands.run::<_, _, ()>(async move |world| {
-				let entity = world.entity(entity);
-				// todo!("call handlers from here");
-			});
-		});
+		.spawn((DiscordBot::default(), GreetState::default()))
+		.observe(register_on_ready);
 }

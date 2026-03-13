@@ -165,24 +165,27 @@ pub struct GatewayHandle {
 	pub events: Receiver<GatewayEvent>,
 }
 
-/// Connect to the Discord gateway, returning a [`GatewayHandle`].
-///
-/// This spawns background tasks for:
-///   - reading from the WebSocket and parsing events
-///   - heartbeating at the interval Discord tells us
-///   - reconnecting + resuming on disconnects
-///   - rate-limiting outbound sends
-pub async fn connect(config: GatewayConfig) -> Result<GatewayHandle, String> {
-	let (event_tx, event_rx) = bounded::<GatewayEvent>(256);
-	let (send_tx, send_rx) = bounded::<serde_json::Value>(64);
+impl GatewayConfig {
+	/// Connect to the Discord gateway, returning a [`GatewayHandle`].
+	///
+	/// This spawns background tasks for:
+	///   - reading from the WebSocket and parsing events
+	///   - heartbeating at the interval Discord tells us
+	///   - reconnecting + resuming on disconnects
+	///   - rate-limiting outbound sends
+	pub async fn connect(self) -> Result<GatewayHandle, String> {
+		let (event_tx, event_rx) = bounded::<GatewayEvent>(256);
+		let (send_tx, send_rx) = bounded::<serde_json::Value>(64);
 
-	async_ext::spawn(gateway_driver(config, event_tx, send_rx)).detach();
+		async_ext::spawn(gateway_driver(self, event_tx, send_rx)).detach();
 
-	Ok(GatewayHandle {
-		sender: send_tx,
-		events: event_rx,
-	})
+		Ok(GatewayHandle {
+			sender: send_tx,
+			events: event_rx,
+		})
+	}
 }
+
 
 // ---------------------------------------------------------------------------
 // The main driver loop (runs in a spawned task)
