@@ -1,10 +1,39 @@
 use crate::prelude::CommandExt;
 use crate::prelude::*;
 use beet::prelude::*;
+use std::time::Instant;
 use tracing::info;
 use tracing::warn;
 use twilight_model::application::command::Command;
+use twilight_model::id::marker::ApplicationMarker;
+use twilight_model::id::marker::UserMarker;
+use twilight_model::id::Id;
 
+
+/// Core bot identity and lifecycle state.
+#[derive(Debug, Component)]
+pub struct BotState {
+	/// The bot's own user ID
+	bot_user_id: Id<UserMarker>,
+	/// The application ID
+	application_id: Id<ApplicationMarker>,
+	/// The bot's username, not unique
+	bot_name: String,
+	/// Global application name
+	global_name: Option<String>,
+	/// Timestamp of when the bot started.
+	start_time: Instant,
+}
+
+impl BotState {
+	pub fn user_id(&self) -> Id<UserMarker> { self.bot_user_id }
+	pub fn name(&self) -> &str { &self.bot_name }
+	pub fn global_name(&self) -> Option<&str> { self.global_name.as_deref() }
+	pub fn application_id(&self) -> Id<ApplicationMarker> {
+		self.application_id
+	}
+	pub fn start_time(&self) -> Instant { self.start_time }
+}
 
 // ---------------------------------------------------------------------------
 // Slash command definitions
@@ -37,22 +66,26 @@ pub fn slash_commands() -> Vec<Command> {
 	]
 }
 
-
-
 /// Called when the bot receives the READY event from the gateway.
 ///
 /// Stores identity information in [`BotState`] and registers slash commands
 /// globally (once per session).
-pub fn register_on_ready(
+pub fn set_bot_state(
 	ev: On<DiscordReady>,
 	mut commands: Commands,
 	query: Populated<&DiscordHttpClient, Without<BotState>>,
 ) -> Result {
 	let entity = ev.event_target();
-	info!(user = %ev.user.tag(), guilds = ev.guilds.len(), "bot is ready!");
 
 
-	let state = BotState::new(ev.user.id, ev.application.id);
+	let state = BotState {
+		bot_user_id: ev.user.id,
+		application_id: ev.application.id,
+		bot_name: ev.user.name.clone(),
+		global_name: ev.user.global_name.clone(),
+		start_time: Instant::now(),
+	};
+	info!("bot is ready:{state:#?}");
 	commands.entity(entity).insert(state);
 
 	let client = query.get(entity)?.clone();

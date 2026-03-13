@@ -34,6 +34,9 @@ pub mod prelude {
 	#[cfg(feature = "io")]
 	pub use crate::bot::*;
 	pub use crate::common_handlers;
+	pub use crate::common_handlers::BotChannels;
+	pub use crate::common_handlers::BotState;
+	pub use crate::common_handlers::GreetState;
 	#[cfg(feature = "io")]
 	pub use crate::discord_io::*;
 	pub use crate::discord_types::*;

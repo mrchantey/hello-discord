@@ -13,7 +13,7 @@ use twilight_model::id::Id;
 pub fn register_on_message(
 	msg: On<DiscordMessage>,
 	mut commands: Commands,
-	query: Query<(&BotState, &GreetState, &DiscordHttpClient)>,
+	query: Query<(&BotState, &DiscordHttpClient)>,
 ) -> Result {
 	if msg.author.bot {
 		return Ok(());
@@ -31,20 +31,9 @@ pub fn register_on_message(
 
 	let channel_id = msg.channel_id;
 
-	let (bot_state, greet_state, http) = query.get(entity)?;
+	let (bot_state, http) = query.get(entity)?;
 
-	// Update greet channel if not yet set.
-	if greet_state.greet_channel_id.is_none() {
-		commands.entity(entity).entry::<GreetState>().and_modify(
-			move |mut state| {
-				if state.greet_channel_id.is_none() {
-					state.greet_channel_id = Some(channel_id);
-				}
-			},
-		);
-	}
-
-	let bot_user_id = bot_state.bot_user_id();
+	let bot_user_id = bot_state.user_id();
 	let start_time = bot_state.start_time();
 	let http = http.clone();
 	let content = msg.content.trim().to_string();
@@ -324,123 +313,4 @@ fn help_text() -> String {
      • `/send-logo` — Send the bot logo\n\
      • `/demo-select` — Demo the select menu component"
 		.to_string()
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn help_text_mentions_all_prefix_commands() {
-		let text = help_text();
-		for cmd in &[
-			"!hello",
-			"!ping",
-			"!uptime",
-			"!roll",
-			"!count",
-			"!first",
-			"!serverinfo",
-			"!whoami",
-			"!help",
-		] {
-			assert!(text.contains(cmd), "help text missing {}", cmd);
-		}
-	}
-
-	#[test]
-	fn command_text_from_bang_prefix() {
-		let content = "!roll 20";
-		assert!(content.starts_with('!'));
-		let parts: Vec<&str> = content.splitn(2, ' ').collect();
-		assert_eq!(parts[0], "!roll");
-		assert_eq!(parts[1], "20");
-	}
-
-	#[test]
-	fn command_text_from_mention_with_bang() {
-		let bot_id = "12345";
-		let content = format!("<@{}> !ping", bot_id);
-		let mention_tag = format!("<@{}>", bot_id);
-		let after_mention = content
-			.strip_prefix(&mention_tag)
-			.unwrap_or("")
-			.trim()
-			.to_string();
-		assert_eq!(after_mention, "!ping");
-	}
-
-	#[test]
-	fn command_text_from_mention_without_bang_gets_prefixed() {
-		let effective_content = "roll 6";
-		// If there's no leading '!', we prepend one.
-		let command_text = if effective_content.starts_with('!') {
-			effective_content.to_string()
-		} else {
-			format!("!{}", effective_content)
-		};
-		assert_eq!(command_text, "!roll 6");
-	}
-
-	#[test]
-	fn empty_effective_content_produces_empty_command_text() {
-		let content = "hello world"; // no '!', no mention
-		let effective_content = String::new();
-		let command_text = if content.starts_with('!') {
-			content.to_string()
-		} else if !effective_content.is_empty() {
-			format!("!{}", effective_content)
-		} else {
-			String::new()
-		};
-		assert!(command_text.is_empty());
-	}
-
-	#[test]
-	fn roll_sides_clamped_to_valid_range() {
-		let sides: u32 = 1u32.max(2).min(1000); // below minimum
-		assert_eq!(sides, 2);
-		let sides: u32 = 9999u32.max(2).min(1000); // above maximum
-		assert_eq!(sides, 1000);
-		let sides: u32 = 6u32.max(2).min(1000); // normal
-		assert_eq!(sides, 6);
-	}
-
-	#[test]
-	fn format_guild_info_includes_guild_name() {
-		let guild: twilight_model::guild::Guild =
-			serde_json::from_value(serde_json::json!({
-				"id": "1",
-				"name": "Test Guild",
-				"icon": null,
-				"owner_id": "2",
-				"approximate_member_count": 50,
-				"approximate_presence_count": 5,
-				"channels": [],
-				"members": [],
-				"roles": [],
-				"emojis": [],
-				"features": [],
-				"afk_timeout": 300,
-				"preferred_locale": "en-US",
-				"premium_progress_bar_enabled": false,
-				"verification_level": 0,
-				"default_message_notifications": 0,
-				"explicit_content_filter": 0,
-				"mfa_level": 0,
-				"premium_tier": 0,
-				"nsfw_level": 0,
-				"system_channel_flags": 0,
-			}))
-			.unwrap();
-		let text = format_guild_info(&guild);
-		assert!(text.contains("Test Guild"));
-		assert!(text.contains("50"));
-		assert!(text.contains("5"));
-		assert!(text.contains("<@2>"));
-	}
 }

@@ -5,6 +5,9 @@ use twilight_model::gateway::payload::incoming::GuildCreate;
 use twilight_model::gateway::payload::incoming::PresenceUpdate;
 use twilight_model::gateway::payload::incoming::Ready;
 
+
+/// The first dispatch message sent, often used to get the
+/// bot name, app id etc.
 #[derive(Debug, Clone, EntityEvent)]
 pub struct DiscordReady {
 	entity: Entity,
@@ -22,10 +25,9 @@ impl std::ops::Deref for DiscordReady {
 	fn deref(&self) -> &Self::Target { &self.ready }
 }
 
-// ---------------------------------------------------------------------------
-// GUILD_CREATE
-// ---------------------------------------------------------------------------
-
+/// Sent when connecting to a server, aka [`Guild`].
+/// A common task done here is selecting a channel for the bot
+/// to use.
 #[derive(Debug, Clone, EntityEvent)]
 pub struct DiscordGuildCreate {
 	entity: Entity,
@@ -41,10 +43,8 @@ impl DiscordGuildCreate {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// PRESENCE_UPDATE
-// ---------------------------------------------------------------------------
-
+/// Sent when a user comes online or offline.
+/// A common task here is greeting users as they come online.
 #[derive(Debug, Clone, EntityEvent)]
 pub struct DiscordPresenceUpdate {
 	entity: Entity,
@@ -57,10 +57,14 @@ impl DiscordPresenceUpdate {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// MESSAGE_CREATE
-// ---------------------------------------------------------------------------
+impl std::ops::Deref for DiscordPresenceUpdate {
+	type Target = PresenceUpdate;
 
+	fn deref(&self) -> &Self::Target { &self.presence }
+}
+
+/// Sent when a message is sent in a channel the bot can see,
+/// including messages sent by the bot itself.
 #[derive(Debug, Clone, EntityEvent)]
 pub struct DiscordMessage {
 	entity: Entity,
@@ -78,6 +82,9 @@ impl std::ops::Deref for DiscordMessage {
 	fn deref(&self) -> &Self::Target { &self.message }
 }
 
+
+/// Sent when a user invokes a slash command or other interaction like
+/// clicking a button.
 #[derive(Debug, Clone, EntityEvent)]
 pub struct DiscordInteraction {
 	entity: Entity,

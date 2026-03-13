@@ -1,60 +1,70 @@
+//! When connecting to a server,
+//! the bot will search for a channel that matches its own name.
 use crate::prelude::*;
 use beet::prelude::*;
 use tracing::info;
 use twilight_model::channel::ChannelType;
 use twilight_model::gateway::payload::incoming::GuildCreate;
+use twilight_model::id::marker::ChannelMarker;
+use twilight_model::id::marker::GuildMarker;
+use twilight_model::id::Id;
 
-/// Observer called when the bot receives a GUILD_CREATE event,
-/// ie it connects to a server.
-///
-/// Picks the first text channel as the greeting channel if one hasn't been
-/// set yet.
-pub fn register_on_guild_create(
+#[derive(Debug, Default, Clone, Component, Deref, DerefMut)]
+#[component(on_add=on_add)]
+pub struct BotChannels {
+	channels: HashMap<Id<GuildMarker>, Id<ChannelMarker>>,
+}
+
+fn on_add(mut world: DeferredWorld, cx: HookContext) {
+	world.commands().entity(cx.entity).observe(bot_channel);
+}
+
+pub fn bot_channel(
 	ev: On<DiscordGuildCreate>,
 	mut commands: Commands,
-	query: Query<&GreetState>,
+	mut query: Populated<(&BotState, &DiscordHttpClient, &mut BotChannels)>,
 ) -> Result {
-	let entity = ev.event_target();
-
 	let guild = match &ev.guild_create {
 		GuildCreate::Available(g) => g,
-		GuildCreate::Unavailable(ug) => {
-			info!(guild_id = %ug.id, "received unavailable guild");
+		GuildCreate::Unavailable(_) => {
 			return Ok(());
 		}
 	};
-	info!(
-		name = %guild.name,
-		"Connected to guild"
-	);
+	let entity = ev.event_target();
+	let (bot_state, http_client, mut bot_channels) = query.get_mut(entity)?;
 
-	let has_greet_channel = query
-		.get(entity)
-		.map(|s| s.greet_channel_id.is_some())
-		.unwrap_or(false);
-
-	if has_greet_channel {
+	if bot_channels.get(&guild.id).is_some() {
+		// already set
 		return Ok(());
 	}
 
-	if let Some(ch) = guild
-		.channels
-		.iter()
-		.find(|c| c.kind == ChannelType::GuildText)
-	{
-		let channel_id = ch.id;
-		let channel_name = ch.name.clone().unwrap_or_else(|| "?".to_string());
-		info!(
-			channel = %channel_name,
-			channel_id = %channel_id,
-			"greeting channel set"
-		);
-		commands.entity(entity).entry::<GreetState>().and_modify(
-			move |mut state| {
-				state.greet_channel_id = Some(channel_id);
-			},
-		);
-	}
+	let bot_name_lower = bot_state.name().to_ascii_lowercase();
+	// find a text channel with the same name as the bot
+	let Some(channel) = guild.channels.iter().find(|channel| {
+		channel.kind == ChannelType::GuildText
+			&& channel.name.as_ref().map_or(false, |name| {
+				name.to_ascii_lowercase() == bot_name_lower
+			})
+	}) else {
+		// no bot channel
+		return Ok(());
+	};
+	bot_channels.insert(guild.id, channel.id);
+
+	// get the name we just checked
+	let channel_name = channel.name.as_deref().unwrap();
+	info!(
+		"Connected to bot channel: {}/{}\nGuild Id: {}",
+		guild.name, channel_name, guild.id
+	);
+
+
+	let client = http_client.clone();
+	let channel_id = channel.id;
+	commands.queue_async(async move |_| {
+		client.send_message(channel_id, "Greetings people!").await?;
+		Ok(())
+	});
 
 	Ok(())
 }

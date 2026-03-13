@@ -21,10 +21,12 @@ fn main() {
 /// Startup system that spawns the discord bot.
 fn spawn_bot(mut commands: Commands) {
 	commands
-		.spawn((DiscordBot::default(), GreetState::default()))
-		.observe(common_handlers::register_on_ready)
-		.observe(common_handlers::register_on_guild_create)
-		.observe(common_handlers::greet_users_coming_online)
+		.spawn((
+			DiscordBot::default(),
+			GreetState::default(),
+			BotChannels::default(),
+		))
+		.observe(common_handlers::set_bot_state)
 		.observe(common_handlers::register_on_message)
 		.observe(common_handlers::register_on_interaction);
 }
