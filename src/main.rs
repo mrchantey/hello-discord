@@ -24,7 +24,7 @@ fn spawn_bot(mut commands: Commands) {
 		.spawn((DiscordBot::default(), GreetState::default()))
 		.observe(common_handlers::register_on_ready)
 		.observe(common_handlers::register_on_guild_create)
-		.observe(common_handlers::register_on_presence_update)
+		.observe(common_handlers::greet_users_coming_online)
 		.observe(common_handlers::register_on_message)
 		.observe(common_handlers::register_on_interaction);
 }

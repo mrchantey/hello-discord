@@ -4,7 +4,8 @@ use tracing::info;
 use twilight_model::channel::ChannelType;
 use twilight_model::gateway::payload::incoming::GuildCreate;
 
-/// Observer called when the bot receives a GUILD_CREATE event.
+/// Observer called when the bot receives a GUILD_CREATE event,
+/// ie it connects to a server.
 ///
 /// Picks the first text channel as the greeting channel if one hasn't been
 /// set yet.
@@ -22,6 +23,10 @@ pub fn register_on_guild_create(
 			return Ok(());
 		}
 	};
+	info!(
+		name = %guild.name,
+		"Connected to guild"
+	);
 
 	let has_greet_channel = query
 		.get(entity)

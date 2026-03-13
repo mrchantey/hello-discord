@@ -8,10 +8,10 @@ use twilight_model::gateway::presence::UserOrId;
 ///
 /// Sends a one-time greeting when a user comes online for the first time
 /// this session.
-pub fn register_on_presence_update(
+pub fn greet_users_coming_online(
 	ev: On<DiscordPresenceUpdate>,
 	mut commands: Commands,
-	query: Query<(&BotState, &GreetState, &DiscordHttpClient)>,
+	query: Populated<(&BotState, &GreetState, &DiscordHttpClient)>,
 ) -> Result {
 	let entity = ev.event_target();
 

@@ -46,7 +46,6 @@ pub fn slash_commands() -> Vec<Command> {
 pub fn register_on_ready(
 	ev: On<DiscordReady>,
 	mut commands: Commands,
-	// async_commands:AsyncCommands,
 	query: Populated<&DiscordHttpClient, Without<BotState>>,
 ) -> Result {
 	let entity = ev.event_target();
