@@ -108,38 +108,24 @@ pub async fn start_gateway_listener(entity: AsyncEntity) -> Result {
 		trace!("Event Received: {event:#?}");
 
 		match event {
-			GatewayEvent::Dispatch(_, ref dispatch) => match dispatch {
+			GatewayEvent::Dispatch(_, dispatch) => match dispatch {
 				DispatchEvent::Ready(ready) => {
-					entity.trigger(DiscordReady::create(ready.clone()));
+					entity.trigger(DiscordReady::create(ready));
 				}
-
 				DispatchEvent::GuildCreate(guild_create) => {
-					handlers::on_guild_create(&entity, guild_create).await;
+					entity.trigger(DiscordGuildCreate::create(*guild_create));
 				}
-
 				DispatchEvent::PresenceUpdate(presence) => {
-					handlers::on_presence_update(&entity, &http, presence)
-						.await;
+					entity.trigger(DiscordPresenceUpdate::create(*presence));
 				}
-
 				DispatchEvent::MessageCreate(msg) => {
-					if msg.author.bot {
-						continue;
-					}
-					handlers::on_message(&entity, &http, msg.0.clone()).await;
+					entity.trigger(DiscordMessage::create(msg.0));
 				}
-
 				DispatchEvent::InteractionCreate(interaction) => {
-					if let Err(e) =
-						handlers::on_interaction(&entity, &http, &interaction.0)
-							.await
-					{
-						error!(error = %e, "failed to handle interaction");
-					}
+					entity.trigger(DiscordInteraction::create(interaction.0));
 				}
-
 				other => {
-					tracing::trace!(event = ?other, "unhandled dispatch event");
+					tracing::warn!(event = ?other, "unhandled dispatch event");
 				}
 			},
 

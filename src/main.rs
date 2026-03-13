@@ -22,5 +22,9 @@ fn main() {
 fn spawn_bot(mut commands: Commands) {
 	commands
 		.spawn((DiscordBot::default(), GreetState::default()))
-		.observe(register_on_ready);
+		.observe(register_on_ready)
+		.observe(register_on_guild_create)
+		.observe(register_on_presence_update)
+		.observe(register_on_message)
+		.observe(register_on_interaction);
 }

@@ -1,3 +1,7 @@
+[workspace.dependencies]
+# beet = { path = "../beet", default-features=false }
+beet = { git = "https://github.com/mrchantey/beet.git", branch = "beet_stack", default-features=false }
+
 [package]
 name = "hello-discord"
 version = "0.1.0"
@@ -30,7 +34,8 @@ io = [
 ]
 [dependencies]
 # beet = { path = "../beet", default-features=false }
-beet = { path = "../beet", default-features=false, features = ["net", "json"] }
+# beet = { path = "../beet", default-features=false, features = ["net", "json"] }
+beet = { workspace = true, features = ["net", "json"] }
 twilight-model = { version = "0.17" }
 
 # --- Always compiled (discord_types + events) ---
@@ -50,4 +55,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = tr
 futures-lite = { version = "2", optional = true }
 
 [dev-dependencies]
-beet = { path = "../beet", features = ["testing"] }
+beet = { workspace = true, features = ["testing"] }

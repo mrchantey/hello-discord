@@ -8,6 +8,5 @@ mod gateway;
 pub use gateway::*;
 mod gateway_listener;
 pub use gateway_listener::*;
-pub mod handlers;
 mod http;
 pub use http::*;
