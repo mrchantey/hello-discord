@@ -5,9 +5,9 @@ use beet::prelude::*;
 use tracing::info;
 use twilight_model::channel::ChannelType;
 use twilight_model::gateway::payload::incoming::GuildCreate;
+use twilight_model::id::Id;
 use twilight_model::id::marker::ChannelMarker;
 use twilight_model::id::marker::GuildMarker;
-use twilight_model::id::Id;
 
 
 /// When connecting to a guild, searches for a channel with the same name
@@ -66,7 +66,9 @@ pub fn bot_channel(
 	let client = http_client.clone();
 	let channel_id = channel.id;
 	commands.queue_async(async move |_| {
-		client.send_message(channel_id, "Greetings people!").await?;
+		client
+			.send(CreateMessage::new(channel_id).content("Greetings people!"))
+			.await?;
 		Ok(())
 	});
 

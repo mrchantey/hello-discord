@@ -3,9 +3,9 @@ use beet::prelude::*;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
+use twilight_model::id::Id;
 use twilight_model::id::marker::ChannelMarker;
 use twilight_model::id::marker::UserMarker;
-use twilight_model::id::Id;
 
 /// Observer called when a non-bot user sends a message.
 ///
@@ -111,13 +111,16 @@ async fn dispatch_message_command(
 	let command = parts[0];
 	let args = parts.get(1).copied().unwrap_or("");
 
-	let reply =
-		|text: String| CreateMessage::new().content(text).reply_to(msg_id);
+	let reply = |text: String| {
+		CreateMessage::new(channel_id)
+			.content(text)
+			.reply_to(msg_id)
+	};
 
 	match command {
 		"!hello" => {
 			let body = reply("Hello, World! 👋".to_string());
-			if let Err(e) = http.create_message(channel_id, &body).await {
+			if let Err(e) = http.send(body).await {
 				error!(error = %e, "failed to send !hello reply");
 			}
 		}
@@ -138,7 +141,7 @@ async fn dispatch_message_command(
 				.unwrap_or_else(|| "unknown".to_string());
 			let text = format!("🏓 Pong! Latency: {}", latency);
 			let body = reply(text);
-			if let Err(e) = http.create_message(channel_id, &body).await {
+			if let Err(e) = http.send(body).await {
 				error!(error = %e, "failed to send !ping reply");
 			}
 		}
@@ -153,7 +156,7 @@ async fn dispatch_message_command(
 				secs % 60
 			);
 			let body = reply(text);
-			if let Err(e) = http.create_message(channel_id, &body).await {
+			if let Err(e) = http.send(body).await {
 				error!(error = %e, "failed to send !uptime reply");
 			}
 		}
@@ -167,7 +170,7 @@ async fn dispatch_message_command(
 				"🎲 Reroll",
 				format!("reroll:{}", sides),
 			)]));
-			if let Err(e) = http.create_message(channel_id, &body).await {
+			if let Err(e) = http.send(body).await {
 				error!(error = %e, "failed to send !roll reply");
 			}
 		}
@@ -183,7 +186,7 @@ async fn dispatch_message_command(
 				Err(e) => format!("❌ Error counting messages: {}", e),
 			};
 			let body = reply(text);
-			if let Err(e) = http.create_message(channel_id, &body).await {
+			if let Err(e) = http.send(body).await {
 				error!(error = %e, "failed to send !count reply");
 			}
 		}
@@ -207,14 +210,14 @@ async fn dispatch_message_command(
 				Err(e) => format!("❌ Error fetching first message: {}", e),
 			};
 			let body = reply(text);
-			if let Err(e) = http.create_message(channel_id, &body).await {
+			if let Err(e) = http.send(body).await {
 				error!(error = %e, "failed to send !first reply");
 			}
 		}
 
 		"!serverinfo" => {
 			let text = if let Some(gid) = guild_id {
-				match http.get_guild(gid).await {
+				match http.send(GetGuild::new(gid)).await {
 					Ok(guild) => format_guild_info(&guild),
 					Err(e) => format!("❌ Error fetching server info: {}", e),
 				}
@@ -222,7 +225,7 @@ async fn dispatch_message_command(
 				"❌ This command only works in a server.".to_string()
 			};
 			let body = reply(text);
-			if let Err(e) = http.create_message(channel_id, &body).await {
+			if let Err(e) = http.send(body).await {
 				error!(error = %e, "failed to send !serverinfo reply");
 			}
 		}
@@ -236,7 +239,7 @@ async fn dispatch_message_command(
 				bot_user_id
 			);
 			let body = reply(text);
-			if let Err(e) = http.create_message(channel_id, &body).await {
+			if let Err(e) = http.send(body).await {
 				error!(error = %e, "failed to send !whoami reply");
 			}
 		}
@@ -244,7 +247,7 @@ async fn dispatch_message_command(
 		"!help" => {
 			let text = help_text();
 			let body = reply(text);
-			if let Err(e) = http.create_message(channel_id, &body).await {
+			if let Err(e) = http.send(body).await {
 				error!(error = %e, "failed to send !help reply");
 			}
 		}
@@ -253,7 +256,7 @@ async fn dispatch_message_command(
 			info!(command = other, "unhandled command");
 			let text = format!("Not sure what that means: `{}`", other);
 			let body = reply(text);
-			if let Err(e) = http.create_message(channel_id, &body).await {
+			if let Err(e) = http.send(body).await {
 				warn!(error = %e, "failed to send unknown-command reply");
 			}
 		}

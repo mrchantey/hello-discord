@@ -18,7 +18,7 @@ pub fn register_commands(
 	let app_id = ev.application.id;
 	commands.queue_async(async move |_| {
 		let cmds = slash_commands();
-		match client.bulk_overwrite_global_commands(app_id, &cmds).await {
+		match client.send(SetGlobalCommands::new(app_id, cmds)).await {
 			Ok(registered) => {
 				info!(
 					count = registered.len(),

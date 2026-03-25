@@ -3,15 +3,15 @@ use beet::prelude::*;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
-use twilight_model::application::interaction::application_command::CommandDataOption;
-use twilight_model::application::interaction::application_command::CommandOptionValue;
-use twilight_model::application::interaction::modal::ModalInteractionComponent;
 use twilight_model::application::interaction::Interaction;
 use twilight_model::application::interaction::InteractionData;
 use twilight_model::application::interaction::InteractionType;
+use twilight_model::application::interaction::application_command::CommandDataOption;
+use twilight_model::application::interaction::application_command::CommandOptionValue;
+use twilight_model::application::interaction::modal::ModalInteractionComponent;
+use twilight_model::channel::message::MessageFlags;
 use twilight_model::channel::message::component::SelectMenuOption;
 use twilight_model::channel::message::embed::Embed;
-use twilight_model::channel::message::MessageFlags;
 use twilight_model::guild::Guild;
 use twilight_model::http::interaction::InteractionResponse;
 use twilight_model::http::interaction::InteractionResponseData;
@@ -58,11 +58,11 @@ async fn dispatch_interaction(
 		}
 		InteractionType::Ping => {
 			let resp = InteractionResponse::pong();
-			http.create_interaction_response(
+			http.send(CreateInteractionResponse::new(
 				interaction.id,
-				&interaction.token,
-				&resp,
-			)
+				interaction.token.clone(),
+				resp,
+			))
 			.await?;
 			Ok(())
 		}
@@ -137,7 +137,7 @@ async fn handle_slash_command(
 
 		"serverinfo" => {
 			let text = if let Some(guild_id) = interaction.guild_id {
-				match http.get_guild(guild_id).await {
+				match http.send(GetGuild::new(guild_id)).await {
 					Ok(guild) => format_guild_info(&guild),
 					Err(e) => format!("❌ Error: {}", e),
 				}
@@ -160,7 +160,10 @@ async fn handle_slash_command(
 			let text = if let Some(ch_id) = interaction.channel_id {
 				match http.count_messages(ch_id).await {
 					Ok(count) => {
-						format!("📊 This channel has approximately **{}** messages.", count)
+						format!(
+							"📊 This channel has approximately **{}** messages.",
+							count
+						)
 					}
 					Err(e) => format!("❌ Error: {}", e),
 				}
@@ -220,11 +223,11 @@ async fn handle_slash_command(
 
 		"send-logo" => {
 			let ack = InteractionResponse::defer();
-			http.create_interaction_response(
+			http.send(CreateInteractionResponse::new(
 				interaction.id,
-				&interaction.token,
-				&ack,
-			)
+				interaction.token.clone(),
+				ack,
+			))
 			.await?;
 
 			#[allow(deprecated)]
@@ -232,30 +235,30 @@ async fn handle_slash_command(
 				match std::fs::read("./logo-square.png") {
 					Ok(file_content) => {
 						if let Err(e) = http
-							.send_message_with_file(
-								ch_id,
-								Some("Here's our logo! 🎨"),
-								"logo-square.png",
-								file_content,
+							.send(
+								CreateMessageWithFile::new(
+									ch_id,
+									"logo-square.png",
+									file_content,
+								)
+								.content("Here's our logo! 🎨"),
 							)
 							.await
 						{
 							warn!(error = %e, "failed to send logo file");
 							let _ = http
-								.send_message(
-									ch_id,
-									&format!("❌ Failed to send logo: {}", e),
-								)
+								.send(CreateMessage::new(ch_id).content(
+									format!("❌ Failed to send logo: {}", e),
+								))
 								.await;
 						}
 					}
 					Err(e) => {
 						warn!(error = %e, "failed to read logo file");
-						let _ = http
-							.send_message(
-								ch_id,
-								&format!("❌ Failed to read logo file: {}", e),
-							)
+						let _ =
+							http.send(CreateMessage::new(ch_id).content(
+								format!("❌ Failed to read logo file: {}", e),
+							))
 							.await;
 					}
 				}
@@ -316,11 +319,11 @@ async fn handle_slash_command(
 		}
 	};
 
-	http.create_interaction_response(
+	http.send(CreateInteractionResponse::new(
 		interaction.id,
-		&interaction.token,
-		&response,
-	)
+		interaction.token.clone(),
+		response,
+	))
 	.await?;
 	Ok(())
 }
@@ -366,11 +369,11 @@ async fn handle_component(
 				)])]),
 		);
 
-		http.create_interaction_response(
+		http.send(CreateInteractionResponse::new(
 			interaction.id,
-			&interaction.token,
-			&response,
-		)
+			interaction.token.clone(),
+			response,
+		))
 		.await?;
 	} else if !values.is_empty() {
 		let selected = values.join(", ");
@@ -380,11 +383,11 @@ async fn handle_component(
 				.with_content(text)
 				.with_flags(MessageFlags::EPHEMERAL),
 		);
-		http.create_interaction_response(
+		http.send(CreateInteractionResponse::new(
 			interaction.id,
-			&interaction.token,
-			&response,
-		)
+			interaction.token.clone(),
+			response,
+		))
 		.await?;
 	} else {
 		info!(custom_id, "unhandled component interaction");
@@ -459,11 +462,11 @@ async fn handle_modal_submit(
 				.with_embeds(vec![embed]),
 		);
 
-		http.create_interaction_response(
+		http.send(CreateInteractionResponse::new(
 			interaction.id,
-			&interaction.token,
-			&response,
-		)
+			interaction.token.clone(),
+			response,
+		))
 		.await?;
 	}
 

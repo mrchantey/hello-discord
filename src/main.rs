@@ -48,9 +48,10 @@ fn on_direct_message(
 
 			let text = completion(&content).await?;
 
-			http.create_message(
-				channel_id,
-				&CreateMessage::new().content(text).reply_to(msg_id),
+			http.send(
+				CreateMessage::new(channel_id)
+					.content(text)
+					.reply_to(msg_id),
 			)
 			.await?;
 

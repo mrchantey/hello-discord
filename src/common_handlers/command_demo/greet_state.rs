@@ -2,8 +2,8 @@ use crate::prelude::*;
 use beet::prelude::*;
 use twilight_model::gateway::presence::Status;
 use twilight_model::gateway::presence::UserOrId;
-use twilight_model::id::marker::UserMarker;
 use twilight_model::id::Id;
+use twilight_model::id::marker::UserMarker;
 
 /// State for the "greet users who come online" feature.
 
@@ -76,7 +76,8 @@ fn greet_users_coming_online(
 			"Welcome online, <@{}>! 🎉 Hope you're having a great day!",
 			user_id
 		);
-		http.send_message(channel_id, &greeting).await?;
+		http.send(CreateMessage::new(channel_id).content(&greeting))
+			.await?;
 		Ok(())
 	});
 
