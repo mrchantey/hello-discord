@@ -22,7 +22,7 @@ fn main() {
 fn spawn_bot(mut commands: Commands) {
 	commands
 		.spawn((DiscordBot::default(), BotChannels::default()))
-		.observe(common_handlers::set_bot_state)
+		.observe(common_handlers::init_bot_state)
 		.observe(on_direct_message);
 }
 
@@ -44,7 +44,9 @@ fn on_direct_message(
 		.queue_async(async move |entity| {
 			let http = entity.get_cloned::<DiscordHttpClient>().await?;
 
-			let text = format!("You sent me a DM with content: {}", content);
+			// let text = format!("You sent me a DM with content: {}", content);
+
+			let text = completion(&content).await?;
 
 			http.create_message(
 				channel_id,
@@ -57,4 +59,27 @@ fn on_direct_message(
 
 
 	Ok(())
+}
+
+
+async fn completion(message: &str) -> Result<String> {
+	ThreadMut::new()
+		.insert_actor(Actor::system())
+		.insert_post(message)
+		.thread_view()
+		.insert_actor(Actor::agent())
+		.with_streamer(
+			OpenAiProvider::gpt_5_mini()?
+				// OllamaProvider::qwen_3_8b()
+				// disable streaming since we're aggregating
+				.without_streaming(),
+		)
+		.send_and_collect()
+		.await
+		.unwrap()
+		.into_iter()
+		.filter(|post| post.intent().is_display())
+		.xtry_map(|post| post.body_string())?
+		.join("\n")
+		.xok()
 }

@@ -38,6 +38,7 @@ pub mod prelude {
 	pub use crate::common_handlers::BotState;
 	#[cfg(feature = "io")]
 	pub use crate::discord_io::*;
+	pub use crate::discord_types::CommandExt;
 	pub use crate::discord_types::*;
 	pub use crate::tw_gateway::*;
 	pub use crate::tw_http::*;

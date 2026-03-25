@@ -1,9 +1,11 @@
-mod on_interaction;
+mod handle_interaction;
 mod parse_bang_command;
+mod register_commands;
 use crate::prelude::*;
 use beet::prelude::*;
-use on_interaction::*;
+use handle_interaction::*;
 use parse_bang_command::*;
+use register_commands::*;
 mod greet_state;
 use greet_state::*;
 
@@ -12,7 +14,8 @@ use greet_state::*;
 pub fn spawn_command_demo(mut commands: Commands) {
 	commands
 		.spawn((DiscordBot::default(), GreetState::default()))
-		.observe(common_handlers::set_bot_state)
+		.observe(common_handlers::init_bot_state)
+		.observe(register_commands)
 		.observe(parse_bang_command)
 		.observe(handle_interaction);
 }

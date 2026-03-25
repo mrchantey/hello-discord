@@ -18,15 +18,15 @@ use tracing::warn;
 use crate::discord_types::*;
 use serde_json::json;
 use twilight_model::application::command::Command as ApplicationCommand;
-use twilight_model::channel::message::Message;
 use twilight_model::channel::Channel;
+use twilight_model::channel::message::Message;
 use twilight_model::guild::Guild;
 use twilight_model::http::interaction::InteractionResponse;
+use twilight_model::id::Id;
 use twilight_model::id::marker::ApplicationMarker;
 use twilight_model::id::marker::ChannelMarker;
 use twilight_model::id::marker::GuildMarker;
 use twilight_model::id::marker::InteractionMarker;
-use twilight_model::id::Id;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -236,7 +236,7 @@ impl DiscordHttpClient {
 	/// template like `POST /channels/{channel_id}/messages`.
 	///
 	/// Returns the raw response body as bytes on success.
-	pub async fn request(
+	async fn request(
 		&self,
 		method: HttpMethod,
 		path: &str,
@@ -331,7 +331,7 @@ impl DiscordHttpClient {
 	}
 
 	/// Like [`request`] but deserialises the response body as JSON.
-	pub async fn request_json<T: serde::de::DeserializeOwned>(
+	async fn request_json<T: serde::de::DeserializeOwned>(
 		&self,
 		method: HttpMethod,
 		path: &str,
