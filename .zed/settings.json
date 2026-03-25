@@ -39,7 +39,7 @@
 		},
 	},
 	"file_scan_exclusions": [
-		// "twilight",
+		"twilight",
 		"target",
 		".env.example",
 		".beet",

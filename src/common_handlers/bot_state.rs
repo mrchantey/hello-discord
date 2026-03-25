@@ -5,13 +5,13 @@ use std::time::Instant;
 use tracing::info;
 use tracing::warn;
 use twilight_model::application::command::Command;
+use twilight_model::id::Id;
 use twilight_model::id::marker::ApplicationMarker;
 use twilight_model::id::marker::UserMarker;
-use twilight_model::id::Id;
 
 
 /// Core bot identity and lifecycle state.
-#[derive(Debug, Component)]
+#[derive(Debug, Clone, Component)]
 pub struct BotState {
 	/// The bot's own user ID
 	bot_user_id: Id<UserMarker>,

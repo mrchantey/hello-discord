@@ -10,7 +10,7 @@ use twilight_model::id::Id;
 /// Observer called when a non-bot user sends a message.
 ///
 /// Handles `!` prefix commands and @-mention commands.
-pub fn register_on_message(
+pub fn parse_bang_command(
 	msg: On<DiscordMessage>,
 	mut commands: Commands,
 	query: Query<(&BotState, &DiscordHttpClient)>,

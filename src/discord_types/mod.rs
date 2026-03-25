@@ -16,3 +16,5 @@ mod events;
 pub use events::*;
 mod ext;
 pub use ext::*;
+mod discord_query;
+pub use discord_query::*;

@@ -9,6 +9,10 @@ use twilight_model::id::marker::ChannelMarker;
 use twilight_model::id::marker::GuildMarker;
 use twilight_model::id::Id;
 
+
+/// When connecting to a guild, searches for a channel with the same name
+/// as the bot, ie `my-bot`. This is treated as the bots owned channel,
+/// to which it is allowed to post more verbosely, respond to all messages etc.
 #[derive(Debug, Default, Clone, Component, Deref, DerefMut)]
 #[component(on_add=on_add)]
 pub struct BotChannels {

@@ -1,10 +1,6 @@
 mod bot_channel;
-mod on_interaction;
-mod on_message;
-mod greet_state;
 mod bot_state;
 pub use bot_channel::*;
-pub use on_interaction::*;
-pub use on_message::*;
-pub use greet_state::*;
+mod command_demo;
 pub use bot_state::*;
+pub use command_demo::*;

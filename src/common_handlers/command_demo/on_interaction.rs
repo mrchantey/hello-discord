@@ -18,7 +18,7 @@ use twilight_model::http::interaction::InteractionResponseData;
 use twilight_model::user::User;
 
 /// Observer called when any interaction (slash command, component, modal) is received.
-pub fn register_on_interaction(
+pub fn handle_interaction(
 	ev: On<DiscordInteraction>,
 	mut commands: Commands,
 	query: Query<(&BotState, &DiscordHttpClient)>,
