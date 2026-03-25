@@ -7,30 +7,13 @@
 //! Gateway event types (including presence updates) are now provided directly
 //! by `twilight-model`.
 
+use beet::prelude::*;
 use serde::Deserialize;
 use serde::Serialize;
-
 use twilight_model::id::Id;
 use twilight_model::id::marker::ChannelMarker;
 use twilight_model::id::marker::GuildMarker;
 use twilight_model::id::marker::MessageMarker;
-
-// ---------------------------------------------------------------------------
-// HTTP method enum (decoupled from any HTTP backend)
-// ---------------------------------------------------------------------------
-
-/// HTTP method for Discord API requests.
-///
-/// Intentionally independent of any HTTP client crate so that
-/// `discord_types` stays backend-agnostic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Method {
-	Get,
-	Post,
-	Put,
-	Patch,
-	Delete,
-}
 
 // ---------------------------------------------------------------------------
 // DiscordRequest / RequestBody
@@ -40,7 +23,7 @@ pub enum Method {
 /// to add auth headers and dispatch.
 #[derive(Debug)]
 pub struct DiscordRequest {
-	pub method: Method,
+	pub method: HttpMethod,
 	/// Path relative to the API base URL, e.g. `"channels/123/messages"`.
 	pub path: String,
 	/// Route template used for per-route rate-limit bucketing,

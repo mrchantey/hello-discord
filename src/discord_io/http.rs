@@ -199,19 +199,6 @@ impl From<JsonError> for HttpError {
 	fn from(e: JsonError) -> Self { HttpError::Serde(e.0) }
 }
 
-// ---------------------------------------------------------------------------
-// Method → HttpMethod conversion
-// ---------------------------------------------------------------------------
-
-fn to_http_method(m: Method) -> HttpMethod {
-	match m {
-		Method::Get => HttpMethod::Get,
-		Method::Post => HttpMethod::Post,
-		Method::Put => HttpMethod::Put,
-		Method::Patch => HttpMethod::Patch,
-		Method::Delete => HttpMethod::Delete,
-	}
-}
 
 // ---------------------------------------------------------------------------
 // DiscordHttpClient
@@ -377,18 +364,14 @@ impl DiscordHttpClient {
 				format!("{}/{}", BASE_URL, req.path.trim_start_matches('/'));
 
 			let http_req = match &req.body {
-				RequestBody::None => {
-					self.build_base_request(to_http_method(req.method), &url)
-				}
+				RequestBody::None => self.build_base_request(req.method, &url),
 				RequestBody::Json(value) => {
-					let base = self
-						.build_base_request(to_http_method(req.method), &url);
+					let base = self.build_base_request(req.method, &url);
 					base.with_json_body(value)
 						.map_err(|e| HttpError::Serde(e.to_string()))?
 				}
 				RequestBody::Raw { content_type, data } => {
-					let mut base = self
-						.build_base_request(to_http_method(req.method), &url);
+					let mut base = self.build_base_request(req.method, &url);
 					base.headers.set_raw("content-type", content_type);
 					base.with_body(data.clone())
 				}

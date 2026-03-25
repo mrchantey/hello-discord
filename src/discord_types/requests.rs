@@ -7,8 +7,8 @@
 //! Helper utilities ([`json_body`], [`parse_json`], [`parse_empty`], …) live
 //! in [`super::custom`] and are used here to keep implementations DRY.
 
-use serde::Serialize;
-
+use crate::prelude::*;
+use beet::prelude::*;
 use twilight_model::application::command::Command as ApplicationCommand;
 use twilight_model::channel::Channel;
 use twilight_model::channel::message::Message;
@@ -24,19 +24,6 @@ use twilight_model::id::marker::InteractionMarker;
 use twilight_model::id::marker::MessageMarker;
 use twilight_model::user::CurrentUser;
 use twilight_model::user::CurrentUserGuild;
-
-use super::custom::CreateMessageReference;
-use super::custom::DiscordRequest;
-use super::custom::IntoDiscordRequest;
-use super::custom::JsonError;
-use super::custom::Method;
-use super::custom::RequestBody;
-use super::custom::build_multipart;
-use super::custom::generate_boundary;
-use super::custom::json_body;
-use super::custom::parse_empty;
-use super::custom::parse_json;
-use super::custom::url_encode_emoji;
 
 // ===========================================================================
 // Messages
@@ -123,7 +110,7 @@ impl IntoDiscordRequest for CreateMessage {
 		let path = format!("channels/{}/messages", self.channel_id);
 		let route_key = format!("POST /channels/{}/messages", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Post,
+			method: HttpMethod::Post,
 			path,
 			route_key,
 			body: json_body(&self)?,
@@ -188,7 +175,7 @@ impl IntoDiscordRequest for CreateMessageWithFile {
 		let content_type =
 			format!("multipart/form-data; boundary={}", boundary);
 		Ok(DiscordRequest {
-			method: Method::Post,
+			method: HttpMethod::Post,
 			path,
 			route_key,
 			body: RequestBody::Raw { content_type, data },
@@ -279,7 +266,7 @@ impl IntoDiscordRequest for GetChannelMessages {
 		let path = format!("channels/{}/messages{}", self.channel_id, query);
 		let route_key = format!("GET /channels/{}/messages", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Get,
+			method: HttpMethod::Get,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -326,7 +313,7 @@ impl IntoDiscordRequest for GetMessage {
 		);
 		let route_key = format!("GET /channels/{}/messages", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Get,
+			method: HttpMethod::Get,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -374,7 +361,7 @@ impl IntoDiscordRequest for DeleteMessage {
 		let route_key =
 			format!("DELETE /channels/{}/messages", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Delete,
+			method: HttpMethod::Delete,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -452,7 +439,7 @@ impl IntoDiscordRequest for EditMessage {
 		);
 		let route_key = format!("PATCH /channels/{}/messages", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Patch,
+			method: HttpMethod::Patch,
 			path,
 			route_key,
 			body: json_body(&self)?,
@@ -491,7 +478,7 @@ impl IntoDiscordRequest for GetChannel {
 		let path = format!("channels/{}", self.channel_id);
 		let route_key = format!("GET /channels/{}", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Get,
+			method: HttpMethod::Get,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -526,7 +513,7 @@ impl IntoDiscordRequest for CreateTypingTrigger {
 		let path = format!("channels/{}/typing", self.channel_id);
 		let route_key = format!("POST /channels/{}/typing", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Post,
+			method: HttpMethod::Post,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -561,7 +548,7 @@ impl IntoDiscordRequest for GetPins {
 		let path = format!("channels/{}/pins", self.channel_id);
 		let route_key = format!("GET /channels/{}/pins", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Get,
+			method: HttpMethod::Get,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -606,7 +593,7 @@ impl IntoDiscordRequest for CreatePin {
 			format!("channels/{}/pins/{}", self.channel_id, self.message_id);
 		let route_key = format!("PUT /channels/{}/pins", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Put,
+			method: HttpMethod::Put,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -651,7 +638,7 @@ impl IntoDiscordRequest for DeletePin {
 			format!("channels/{}/pins/{}", self.channel_id, self.message_id);
 		let route_key = format!("DELETE /channels/{}/pins", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Delete,
+			method: HttpMethod::Delete,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -707,7 +694,7 @@ impl IntoDiscordRequest for GetGuild {
 		};
 		let route_key = format!("GET /guilds/{}", self.guild_id);
 		Ok(DiscordRequest {
-			method: Method::Get,
+			method: HttpMethod::Get,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -744,7 +731,7 @@ impl IntoDiscordRequest for GetGuildChannels {
 		let path = format!("guilds/{}/channels", self.guild_id);
 		let route_key = format!("GET /guilds/{}/channels", self.guild_id);
 		Ok(DiscordRequest {
-			method: Method::Get,
+			method: HttpMethod::Get,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -826,7 +813,7 @@ impl IntoDiscordRequest for GetCurrentUserGuilds {
 		let path = format!("users/@me/guilds{}", query);
 		let route_key = "GET /users/@me/guilds".to_string();
 		Ok(DiscordRequest {
-			method: Method::Get,
+			method: HttpMethod::Get,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -859,7 +846,7 @@ impl IntoDiscordRequest for GetCurrentUser {
 
 	fn into_discord_request(self) -> Result<DiscordRequest, JsonError> {
 		Ok(DiscordRequest {
-			method: Method::Get,
+			method: HttpMethod::Get,
 			path: "users/@me".to_string(),
 			route_key: "GET /users/@me".to_string(),
 			body: RequestBody::None,
@@ -920,7 +907,7 @@ impl IntoDiscordRequest for CreateInteractionResponse {
 			.map(RequestBody::Json)
 			.map_err(|e| JsonError(e.to_string()))?;
 		Ok(DiscordRequest {
-			method: Method::Post,
+			method: HttpMethod::Post,
 			path,
 			route_key,
 			body,
@@ -997,7 +984,7 @@ impl IntoDiscordRequest for EditOriginalInteractionResponse {
 		let route_key =
 			"PATCH /webhooks/interaction/messages/@original".to_string();
 		Ok(DiscordRequest {
-			method: Method::Patch,
+			method: HttpMethod::Patch,
 			path,
 			route_key,
 			body: json_body(&self)?,
@@ -1051,7 +1038,7 @@ impl IntoDiscordRequest for SetGlobalCommands {
 			.map(RequestBody::Json)
 			.map_err(|e| JsonError(e.to_string()))?;
 		Ok(DiscordRequest {
-			method: Method::Put,
+			method: HttpMethod::Put,
 			path,
 			route_key,
 			body,
@@ -1111,7 +1098,7 @@ impl IntoDiscordRequest for SetGuildCommands {
 			.map(RequestBody::Json)
 			.map_err(|e| JsonError(e.to_string()))?;
 		Ok(DiscordRequest {
-			method: Method::Put,
+			method: HttpMethod::Put,
 			path,
 			route_key,
 			body,
@@ -1173,7 +1160,7 @@ impl IntoDiscordRequest for CreateReaction {
 		let route_key =
 			format!("PUT /channels/{}/messages/reactions", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Put,
+			method: HttpMethod::Put,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -1225,7 +1212,7 @@ impl IntoDiscordRequest for DeleteOwnReaction {
 		let route_key =
 			format!("DELETE /channels/{}/messages/reactions", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Delete,
+			method: HttpMethod::Delete,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -1273,7 +1260,7 @@ impl IntoDiscordRequest for DeleteAllReactions {
 		let route_key =
 			format!("DELETE /channels/{}/messages/reactions", self.channel_id);
 		Ok(DiscordRequest {
-			method: Method::Delete,
+			method: HttpMethod::Delete,
 			path,
 			route_key,
 			body: RequestBody::None,
@@ -1326,7 +1313,7 @@ mod tests {
 	fn create_message_into_request() {
 		let msg = CreateMessage::new(Id::new(42)).content("hi");
 		let req = msg.into_discord_request().unwrap();
-		assert!(matches!(req.method, Method::Post));
+		assert!(matches!(req.method, HttpMethod::Post));
 		assert_eq!(req.path, "channels/42/messages");
 		assert_eq!(req.route_key, "POST /channels/42/messages");
 		assert!(matches!(req.body, RequestBody::Json(_)));
@@ -1345,7 +1332,7 @@ mod tests {
 		.into_discord_request()
 		.unwrap();
 
-		assert!(matches!(req.method, Method::Post));
+		assert!(matches!(req.method, HttpMethod::Post));
 		assert_eq!(req.path, "channels/42/messages");
 		match &req.body {
 			RequestBody::Raw { content_type, data } => {
@@ -1368,7 +1355,7 @@ mod tests {
 			.into_discord_request()
 			.unwrap();
 
-		assert!(matches!(req.method, Method::Get));
+		assert!(matches!(req.method, HttpMethod::Get));
 		assert!(req.path.contains("limit=50"));
 		assert!(req.path.contains("before=99"));
 		assert!(matches!(req.body, RequestBody::None));
@@ -1389,7 +1376,7 @@ mod tests {
 		let req = DeleteMessage::new(Id::new(10), Id::new(20))
 			.into_discord_request()
 			.unwrap();
-		assert!(matches!(req.method, Method::Delete));
+		assert!(matches!(req.method, HttpMethod::Delete));
 		assert_eq!(req.path, "channels/10/messages/20");
 	}
 
@@ -1401,7 +1388,7 @@ mod tests {
 			.content("updated")
 			.into_discord_request()
 			.unwrap();
-		assert!(matches!(req.method, Method::Patch));
+		assert!(matches!(req.method, HttpMethod::Patch));
 		assert_eq!(req.path, "channels/10/messages/20");
 		match &req.body {
 			RequestBody::Json(v) => {
@@ -1419,7 +1406,7 @@ mod tests {
 	#[test]
 	fn get_channel_into_request() {
 		let req = GetChannel::new(Id::new(5)).into_discord_request().unwrap();
-		assert!(matches!(req.method, Method::Get));
+		assert!(matches!(req.method, HttpMethod::Get));
 		assert_eq!(req.path, "channels/5");
 	}
 
@@ -1430,7 +1417,7 @@ mod tests {
 		let req = CreateTypingTrigger::new(Id::new(7))
 			.into_discord_request()
 			.unwrap();
-		assert!(matches!(req.method, Method::Post));
+		assert!(matches!(req.method, HttpMethod::Post));
 		assert_eq!(req.path, "channels/7/typing");
 	}
 
@@ -1494,7 +1481,7 @@ mod tests {
 		let req = CreateInteractionResponse::new(Id::new(1), "token123", resp)
 			.into_discord_request()
 			.unwrap();
-		assert!(matches!(req.method, Method::Post));
+		assert!(matches!(req.method, HttpMethod::Post));
 		assert_eq!(req.path, "interactions/1/token123/callback");
 	}
 
@@ -1505,7 +1492,7 @@ mod tests {
 		let req = SetGlobalCommands::new(Id::new(1), vec![])
 			.into_discord_request()
 			.unwrap();
-		assert!(matches!(req.method, Method::Put));
+		assert!(matches!(req.method, HttpMethod::Put));
 		assert_eq!(req.path, "applications/1/commands");
 	}
 
@@ -1516,7 +1503,7 @@ mod tests {
 		let req = SetGuildCommands::new(Id::new(1), Id::new(2), vec![])
 			.into_discord_request()
 			.unwrap();
-		assert!(matches!(req.method, Method::Put));
+		assert!(matches!(req.method, HttpMethod::Put));
 		assert_eq!(req.path, "applications/1/guilds/2/commands");
 	}
 
@@ -1527,7 +1514,7 @@ mod tests {
 		let req = CreateReaction::new(Id::new(1), Id::new(2), "👍")
 			.into_discord_request()
 			.unwrap();
-		assert!(matches!(req.method, Method::Put));
+		assert!(matches!(req.method, HttpMethod::Put));
 		assert!(req.path.contains("%F0%9F%91%8D"));
 		assert!(req.path.ends_with("/@me"));
 	}
@@ -1547,7 +1534,7 @@ mod tests {
 		let req = DeleteAllReactions::new(Id::new(1), Id::new(2))
 			.into_discord_request()
 			.unwrap();
-		assert!(matches!(req.method, Method::Delete));
+		assert!(matches!(req.method, HttpMethod::Delete));
 		assert_eq!(req.path, "channels/1/messages/2/reactions");
 	}
 
@@ -1556,7 +1543,7 @@ mod tests {
 	#[test]
 	fn get_pins_into_request() {
 		let req = GetPins::new(Id::new(42)).into_discord_request().unwrap();
-		assert!(matches!(req.method, Method::Get));
+		assert!(matches!(req.method, HttpMethod::Get));
 		assert_eq!(req.path, "channels/42/pins");
 	}
 
@@ -1565,7 +1552,7 @@ mod tests {
 		let req = CreatePin::new(Id::new(1), Id::new(2))
 			.into_discord_request()
 			.unwrap();
-		assert!(matches!(req.method, Method::Put));
+		assert!(matches!(req.method, HttpMethod::Put));
 		assert_eq!(req.path, "channels/1/pins/2");
 	}
 
@@ -1574,7 +1561,7 @@ mod tests {
 		let req = DeletePin::new(Id::new(1), Id::new(2))
 			.into_discord_request()
 			.unwrap();
-		assert!(matches!(req.method, Method::Delete));
+		assert!(matches!(req.method, HttpMethod::Delete));
 		assert_eq!(req.path, "channels/1/pins/2");
 	}
 }
