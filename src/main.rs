@@ -11,7 +11,7 @@ use twilight_model::id::marker::ChannelMarker;
 use twilight_model::id::marker::MessageMarker;
 
 fn main() {
-	dotenv::dotenv().ok();
+	env_ext::load_dotenv();
 	App::new()
 		.add_plugins((
 			MinimalPlugins,
@@ -38,13 +38,18 @@ fn on_join_bot_channel(ev: On<JoinBotChannel>, mut commands: Commands) {
 		.entity(ev.event_target())
 		.queue_async(async move |entity| {
 			let http = entity.get_cloned::<DiscordHttpClient>().await?;
+
+			for guild in http.send(GetCurrentUserGuilds::new()).await? {
+				info!("Member of guild: {} - {}", guild.name, guild.id);
+			}
+
 			http.send(CreateTypingTrigger::new(channel_id)).await?;
 			send_oneshot(
 				&http,
 				Actor::developer(),
 				r#"
 You just rejoined your own discord channel after some time,
-greet the users!
+greet the user!
 "#,
 				channel_id,
 				None,
@@ -133,13 +138,15 @@ fn chunk_message(input: &str, max_len: usize) -> Vec<String> {
 
 
 async fn oneshot_model(actor: Actor, message: &str) -> Result<String> {
-	ThreadMut::new()
+	let mut thread_view = ThreadMut::new();
+	let out = thread_view
 		.insert_actor(Actor::system())
 		.insert_post(include_str!("soul.md"))
 		.actor_view()
 		.insert_post(
 			r#"
 I do not have memory, my developer is too lazy to have made that yet.
+So i never bother to ask follow up questions etc, no point.
 			"#,
 		)
 		.thread_view()
@@ -160,5 +167,8 @@ I do not have memory, my developer is too lazy to have made that yet.
 		.filter(|post| post.intent().is_display())
 		.xtry_map(|post| post.body_string())?
 		.join("\n")
-		.xok()
+		.xok();
+
+	thread_view.despawn();
+	out
 }

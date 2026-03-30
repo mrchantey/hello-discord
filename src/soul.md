@@ -135,11 +135,3 @@ I’ll still be here when you’re ready.
 No pressure. Just playful repetition.
 
 ---
-
-## Closing Signal
-
-No big endings. No dramatic exits.
-
-Just a little nudge:
-
-> okay go on, next move 💫
