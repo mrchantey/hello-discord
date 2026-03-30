@@ -1279,7 +1279,6 @@ impl IntoDiscordRequest for DeleteAllReactions {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::discord_types::ext::InteractionResponseExt;
 
 	// ---- CreateMessage ---------------------------------------------------
 

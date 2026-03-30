@@ -18,6 +18,3 @@ mod ext;
 pub use ext::*;
 mod discord_query;
 pub use discord_query::*;
-/// Concrete request types implementing [`IntoDiscordRequest`].
-mod requests;
-pub use requests::*;

@@ -27,6 +27,7 @@ pub mod common_handlers;
 #[cfg(feature = "io")]
 pub mod discord_io;
 pub mod discord_types;
+pub mod request_types;
 pub mod tw_gateway;
 pub mod tw_http;
 
@@ -40,6 +41,7 @@ pub mod prelude {
 	pub use crate::discord_io::*;
 	pub use crate::discord_types::CommandExt;
 	pub use crate::discord_types::*;
+	pub use crate::request_types::*;
 	pub use crate::tw_gateway::*;
 	pub use crate::tw_http::*;
 }
