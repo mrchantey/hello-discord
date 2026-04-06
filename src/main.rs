@@ -73,7 +73,7 @@ fn on_direct_message(
 	let actor_kind = if ev.message.author.bot {
 		ActorKind::Agent
 	} else {
-		ActorKind::Human
+		ActorKind::User
 	};
 	let actor = Actor::new(&ev.message.author.name, actor_kind);
 	let channel_id = ev.message.channel_id;
@@ -154,7 +154,7 @@ So i never bother to ask follow up questions etc, no point.
 		.insert_post(message)
 		.thread_view()
 		.insert_actor(Actor::agent())
-		.with_streamer(
+		.with_bundle(
 			OpenAiProvider::gpt_5_mini()?
 				// OllamaProvider::qwen_3_8b()
 				// disable streaming since we're aggregating
